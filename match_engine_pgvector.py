@@ -21,6 +21,8 @@ import time
 import numpy as np
 import psycopg2
 import httpx
+import queue
+import threading
 from psycopg2.extras import RealDictCursor
 from openai import AzureOpenAI
 from dotenv import load_dotenv
@@ -58,9 +60,11 @@ client = AzureOpenAI(
 )
 DEPLOYMENT = os.getenv("OPENAI_DEPLOYMENT", "text-embedding-3-small")
 
-# Pool de conexiones BD
-_conn_pool: list = []
-MAX_CONNS = 10
+# Pool de conexiones BD (acotado)
+MAX_CONNS = int(os.getenv("DB_MAX_CONNS", "6"))
+_conn_pool: "queue.Queue[psycopg2.extensions.connection]" = queue.Queue(maxsize=MAX_CONNS)
+_open_conns = 0
+_pool_lock = threading.Lock()
 
 
 # =================================================================
@@ -69,22 +73,48 @@ MAX_CONNS = 10
 
 def _get_conn():
     """Obtiene una conexión del pool o crea una nueva."""
-    if _conn_pool:
-        conn = _conn_pool.pop()
+    global _open_conns
+
+    try:
+        conn = _conn_pool.get_nowait()
         try:
             conn.cursor().execute("SELECT 1")
             return conn
         except Exception:
-            pass  # Conexión muerta — crear nueva
-    return psycopg2.connect(**DB_CONFIG)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            with _pool_lock:
+                _open_conns = max(0, _open_conns - 1)
+    except queue.Empty:
+        pass
+
+    with _pool_lock:
+        if _open_conns < MAX_CONNS:
+            _open_conns += 1
+            return psycopg2.connect(**DB_CONFIG)
+
+    # Esperar brevemente por una conexión libre
+    try:
+        conn = _conn_pool.get(timeout=5)
+        conn.cursor().execute("SELECT 1")
+        return conn
+    except Exception:
+        raise RuntimeError("DB pool agotado. Intenta nuevamente en unos segundos.")
 
 
 def _release_conn(conn):
     """Devuelve la conexión al pool."""
-    if len(_conn_pool) < MAX_CONNS:
-        _conn_pool.append(conn)
-    else:
-        conn.close()
+    global _open_conns
+    try:
+        _conn_pool.put_nowait(conn)
+    except queue.Full:
+        try:
+            conn.close()
+        finally:
+            with _pool_lock:
+                _open_conns = max(0, _open_conns - 1)
 
 
 # =================================================================
@@ -247,10 +277,10 @@ def _build_where(categorias: list = None,
             params.extend(cats_norm)
             print(f"   🔍 Filtro categoría : {cats_norm}")
 
-    # ── 2. Filtro por fecha (SIEMPRE — últimos 12 meses) ─────────
+    # ── 2. Filtro por fecha (SIEMPRE — últimos 30 días) ──────────
     if solo_recientes:
-        conditions.append("t.date_published >= NOW() - INTERVAL '12 months'")
-        print(f"   🔍 Filtro fecha     : últimos 12 meses")
+        conditions.append("COALESCE(t.first_seen_at, t.date_published) >= NOW() - INTERVAL '30 days'")
+        print("   🔍 Filtro fecha     : últimos 30 días")
 
     # ── 3. Filtro por región (solo si strict=True) ────────────────
     if strict and regiones:
@@ -282,7 +312,7 @@ def buscar_licitaciones(query: str,
                         solo_recientes: bool = True) -> List[Dict]:
     """
     Búsqueda semántica con pre-filtros SQL.
-    SIEMPRE filtra: categoría + últimos 12 meses
+    SIEMPRE filtra: categoría + últimos 30 días
     Si strict=True: también filtra por región y monto
     """
     t0 = time.time()

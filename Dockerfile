@@ -17,9 +17,9 @@ COPY . .
 
 EXPOSE 5007
 
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5007", \
-     "--timeout", "120", \
-     "--worker-class", "gthread", \
-     "--threads", "4", \
-     "--keep-alive", "5", \
-     "chat_engine:app"]
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5007", \
+    "--timeout", "120", \
+    "--worker-class", "gthread", \
+    "--threads", "2", \
+    "--keep-alive", "5", \
+    "chat_engine:app"]
