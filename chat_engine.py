@@ -518,6 +518,17 @@ def get_recommendations():
         print(f"\n📋 RECOMMENDATIONS | user_id={user_id}")
         result = me.recomendar(user_id=int(user_id), top_k=10)
 
+        if result.get("error"):
+            print(f"   ❌ Motor de recomendaciones: {result['error']}")
+            return Response(
+                json.dumps({
+                    "error": "No pudimos generar recomendaciones en este momento.",
+                    "code": "RECOMMENDATION_ENGINE_ERROR",
+                }, ensure_ascii=False),
+                status=503,
+                mimetype="application/json",
+            )
+
         # Mapear campos al formato que espera el frontend
         licitaciones = result.get("licitaciones") or []
         recommendations = []
@@ -532,13 +543,20 @@ def get_recommendations():
                 "tipo_contrato_clasificado": lic.get("categoria", "").capitalize(),
                 "metodo":                  lic.get("metodo"),
                 "fecha_publicacion":       str(lic.get("fecha_publicacion", "")),
+                "recommendation_scope":    lic.get("recommendation_scope", "recent"),
             })
 
+        recommendation_scope = (
+            recommendations[0].get("recommendation_scope")
+            if recommendations
+            else "none"
+        )
         response_data = {
             "recommendations": recommendations,
             "total":           len(recommendations),
             "user_id":         user_id,
             "company_name":    result.get("company_name"),
+            "recommendation_scope": recommendation_scope,
         }
 
         print(f"   ✅ {len(recommendations)} recomendaciones para {result.get('company_name')}")
@@ -549,7 +567,14 @@ def get_recommendations():
 
     except Exception as e:
         import traceback; traceback.print_exc()
-        return Response(json.dumps({"error": str(e)}), status=500, mimetype="application/json")
+        return Response(
+            json.dumps({
+                "error": "No pudimos generar recomendaciones en este momento.",
+                "code": "RECOMMENDATION_INTERNAL_ERROR",
+            }, ensure_ascii=False),
+            status=500,
+            mimetype="application/json",
+        )
 
 
 # =================================================================

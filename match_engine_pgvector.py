@@ -78,7 +78,9 @@ def _get_conn():
     try:
         conn = _conn_pool.get_nowait()
         try:
-            conn.cursor().execute("SELECT 1")
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            conn.rollback()
             return conn
         except Exception:
             try:
@@ -98,7 +100,9 @@ def _get_conn():
     # Esperar brevemente por una conexión libre
     try:
         conn = _conn_pool.get(timeout=5)
-        conn.cursor().execute("SELECT 1")
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+        conn.rollback()
         return conn
     except Exception:
         raise RuntimeError("DB pool agotado. Intenta nuevamente en unos segundos.")
@@ -108,6 +112,8 @@ def _release_conn(conn):
     """Devuelve la conexión al pool."""
     global _open_conns
     try:
+        if not conn.closed:
+            conn.rollback()
         _conn_pool.put_nowait(conn)
     except queue.Full:
         try:
@@ -321,20 +327,54 @@ def buscar_licitaciones(query: str,
         return []
     print(f"   ⏱️  Embedding: {(time.time()-t0)*1000:.0f}ms")
 
-    vector_str  = "[" + ",".join(str(x) for x in vector.tolist()) + "]"
-    where, params_extra = _build_where(categorias, regiones, monto_max, strict, solo_recientes)
+    vector_str = "[" + ",".join(str(x) for x in vector.tolist()) + "]"
+    has_profile_filters = bool(
+        categorias or (strict and (regiones or (monto_max and monto_max > 0)))
+    )
+    attempts = [
+        (categorias, regiones, monto_max, strict, solo_recientes),
+    ]
+    if solo_recientes:
+        attempts.append((categorias, regiones, monto_max, strict, False))
+    if has_profile_filters:
+        attempts.append((None, None, None, False, False))
 
-    conn = _get_conn()
-    try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        t1  = time.time()
+    attempted_queries = set()
+    for attempt_categories, attempt_regions, attempt_amount, attempt_strict, attempt_recent in attempts:
+        where, params_extra = _build_where(
+            attempt_categories,
+            attempt_regions,
+            attempt_amount,
+            attempt_strict,
+            attempt_recent,
+        )
+        query_signature = (where, tuple(params_extra))
+        if query_signature in attempted_queries:
+            continue
+        attempted_queries.add(query_signature)
 
-        sql    = SQL_BASE.format(where_clause=where)
-        params = [vector_str] + params_extra + [vector_str, top_k * 3]
-        cur.execute(sql, params)
-        rows = cur.fetchall()
-        print(f"   ⏱️  pgvector search: {(time.time()-t1)*1000:.0f}ms "
-              f"({'con filtros' if where else 'sin filtros'})")
+        conn = _get_conn()
+        try:
+            t1 = time.time()
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # pgvector 0.8+ debe seguir explorando el índice cuando los
+                # filtros de fecha/perfil descartan los vecinos iniciales.
+                cur.execute("SET LOCAL hnsw.iterative_scan = strict_order")
+                cur.execute("SET LOCAL hnsw.ef_search = 100")
+                sql = SQL_BASE.format(where_clause=where)
+                params = [vector_str] + params_extra + [vector_str, top_k * 3]
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+            print(f"   ⏱️  pgvector search: {(time.time()-t1)*1000:.0f}ms "
+                  f"({'con filtros' if where else 'sin filtros'})")
+        except Exception as e:
+            print(f"   ❌ Error búsqueda pgvector: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+        finally:
+            _release_conn(conn)
 
         resultados = []
         for row in rows:
@@ -349,6 +389,7 @@ def buscar_licitaciones(query: str,
                 "metodo":             row["metodo"],
                 "fecha_publicacion":  str(row["fecha_publicacion"] or ""),
                 "affinity_score":     round(score * 100, 1),
+                "recommendation_scope": "recent" if attempt_recent else "historical",
             })
             if len(resultados) >= top_k:
                 break
@@ -357,19 +398,14 @@ def buscar_licitaciones(query: str,
             print(f"   ✅ {len(resultados)} resultados | "
                   f"Mejor: {resultados[0]['affinity_score']}% | "
                   f"Total: {(time.time()-t0)*1000:.0f}ms")
-        else:
-            print(f"   ⚠️  Sin resultados con filtros — reintentando sin filtros")
-            return buscar_licitaciones(query, top_k=top_k)  # fallback sin filtros
+            return resultados
 
-        return resultados
+        if attempt_recent:
+            print("   ⚠️  Sin resultados recientes — ampliando el periodo")
+        elif where and has_profile_filters:
+            print("   ⚠️  Sin resultados con filtros de perfil — ampliando criterios")
 
-    except Exception as e:
-        print(f"   ❌ Error búsqueda pgvector: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
-    finally:
-        _release_conn(conn)
+    return []
 
 
 # =================================================================
