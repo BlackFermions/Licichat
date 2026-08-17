@@ -54,6 +54,29 @@ class LiteRagSelectionTests(unittest.TestCase):
         self.assertIn("registro sanitario", context)
         self.assertEqual(references[0]["page"], 18)
 
+    def test_prioritizes_direct_terms_over_supporting_synonyms(self):
+        corpus = Corpus(
+            tender_id="1",
+            source_digest="digest",
+            pages=[
+                PageText(
+                    "Bases",
+                    9,
+                    "Requisito tecnico del postor, proveedor y participante para la oferta.",
+                ),
+                PageText(
+                    "Bases Integradas",
+                    32,
+                    "Las especificaciones solicitadas incluyen proteina y energia total.",
+                ),
+            ],
+            document_count=1,
+            total_pages=2,
+            total_chars=140,
+        )
+        _, references = select_context(corpus, "Que especificaciones piden a los convocados?")
+        self.assertEqual(references[0]["page"], 32)
+
 
 if __name__ == "__main__":
     unittest.main()

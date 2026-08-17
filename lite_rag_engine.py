@@ -462,9 +462,8 @@ def _tokens(value: str) -> list[str]:
     ]
 
 
-def _query_tokens(value: str) -> list[str]:
-    tokens = _tokens(value)
-    expanded = list(tokens)
+def _expanded_query_tokens(tokens: list[str]) -> list[str]:
+    expanded: list[str] = []
     if any(token.startswith("especific") for token in tokens):
         expanded.extend(["tecnica", "tecnico", "requisito", "caracteristica", "ficha", "cumplimiento"])
     if any(token.startswith("convoc") for token in tokens):
@@ -475,15 +474,18 @@ def _query_tokens(value: str) -> list[str]:
 
 
 def select_context(corpus: Corpus, question: str, max_pages: int = 6) -> tuple[str, list[dict]]:
-    query_tokens = _query_tokens(question)
-    query_counts = Counter(query_tokens)
+    query_counts = Counter(_tokens(question))
+    support_tokens = [
+        token for token in _expanded_query_tokens(list(query_counts)) if token not in query_counts
+    ]
     normalized_question = _normalize(question).strip()
     scored: list[tuple[float, PageText]] = []
 
     for page in corpus.pages:
         normalized_text = _normalize(page.text)
         page_counts = Counter(_tokens(page.text))
-        score = sum(min(page_counts[token], 8) * (1.0 + query_counts[token]) for token in query_counts)
+        score = sum(min(page_counts[token], 8) * (3.0 + query_counts[token]) for token in query_counts)
+        score += sum(min(page_counts[token], 4) * 0.25 for token in support_tokens)
         if normalized_question and len(normalized_question) >= 8 and normalized_question in normalized_text:
             score += 20
         if any(token in _normalize(page.document) for token in query_counts):
