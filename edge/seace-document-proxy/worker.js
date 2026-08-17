@@ -147,6 +147,17 @@ function serviceUrl(base, path) {
   return url.toString();
 }
 
+function publicPreparationFailureCode(failures) {
+  const reasons = failures.map((failure) => String(failure || ""));
+  if (reasons.some((reason) => reason.includes("scanned_pdf") || reason.includes("ocr_required"))) {
+    return "ocr_required";
+  }
+  if (reasons.some((reason) => reason.includes("file_too_large") || reason.includes("document_too_large"))) {
+    return "file_too_large";
+  }
+  return "documents_unavailable";
+}
+
 async function prepareDocuments(request, env) {
   const origin = request.headers.get("Origin") || "";
   if (!ALLOWED_ORIGINS.has(origin)) {
@@ -234,7 +245,7 @@ async function prepareDocuments(request, env) {
 
   if (!prepared) {
     return jsonResponse(
-      { status: "error", code: "documents_unavailable", skipped, failures },
+      { status: "error", code: publicPreparationFailureCode(failures), skipped, failures },
       422,
       origin,
     );
