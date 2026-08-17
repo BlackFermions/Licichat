@@ -54,7 +54,7 @@ class LiteRagSelectionTests(unittest.TestCase):
         self.assertIn("registro sanitario", context)
         self.assertEqual(references[0]["page"], 18)
 
-    def test_prioritizes_direct_terms_over_supporting_synonyms(self):
+    def test_prioritizes_supplier_requirements_for_convoked_suppliers(self):
         corpus = Corpus(
             tender_id="1",
             source_digest="digest",
@@ -75,7 +75,26 @@ class LiteRagSelectionTests(unittest.TestCase):
             total_chars=140,
         )
         _, references = select_context(corpus, "Que especificaciones piden a los convocados?")
-        self.assertEqual(references[0]["page"], 32)
+        self.assertEqual(references[0]["page"], 9)
+        self.assertIn({"document": "Bases Integradas", "page": 32}, references)
+
+    def test_labels_scored_evidence_in_context(self):
+        corpus = Corpus(
+            tender_id="1",
+            source_digest="digest",
+            pages=[
+                PageText(
+                    "Bases Integradas",
+                    33,
+                    "Factores de evaluacion. Proteina de 11.7 g a mas: 5 puntos.",
+                ),
+            ],
+            document_count=1,
+            total_pages=1,
+            total_chars=70,
+        )
+        context, _ = select_context(corpus, "Que especificaciones piden?")
+        self.assertIn("no asumir obligatoriedad", context)
 
     def test_prefers_integrated_bases_and_skips_duplicate_pages(self):
         duplicate_text = "Especificaciones de proteina energia y condiciones del producto. " * 12

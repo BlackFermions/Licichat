@@ -200,6 +200,19 @@ def chat_stream():
             yield "[STATUS]Preparando documentos PDF...\n"
             tender, corpus = prepare_corpus(tender_id)
             context, references = select_context(corpus, message)
+            normalized_message = message.lower()
+            supplier_question = any(
+                marker in normalized_message
+                for marker in ("convoc", "postor", "proveedor", "participante")
+            )
+            question_guidance = (
+                "Esta consulta pregunta por lo exigido al postor. Empieza por los requisitos y documentos "
+                "que debe presentar o acreditar. Separa cualquier mejora con puntaje bajo 'Factores de "
+                "evaluacion' y aclara que otorga puntaje, pero que el extracto no demuestra que sea un "
+                "requisito de admision. No cierres diciendo que todos los factores deben cumplirse."
+                if supplier_question
+                else "Clasifica la evidencia antes de responder y contesta solamente la consulta realizada."
+            )
             cache_label = "cache" if corpus.cache_hit else "download"
             logger.info(
                 "document_ready tender=%s source=%s docs=%s pages=%s chars=%s elapsed_ms=%s",
@@ -244,6 +257,14 @@ EXTRACTOS SELECCIONADOS:
 
 REFERENCIAS PERMITIDAS:
 {json.dumps(references, ensure_ascii=False)}
+
+INSTRUCCION ESPECIFICA PARA ESTA PREGUNTA:
+{question_guidance}
+
+CONTROL FINAL ANTES DE RESPONDER:
+- Si un dato concede puntos, debe aparecer solo como factor de evaluacion y no como requisito obligatorio.
+- Usa "obligatorio" unicamente cuando el extracto indique que se debe presentar, acreditar o cumplir para admitir la oferta.
+- No combines ambos grupos en una misma lista.
 """
             messages = [{"role": "system", "content": system_prompt}]
             for item in history[-4:]:

@@ -473,6 +473,49 @@ def _expanded_query_tokens(tokens: list[str]) -> list[str]:
     return expanded
 
 
+def _intent_token_weights(tokens: list[str]) -> dict[str, float]:
+    if not any(
+        token.startswith(prefix)
+        for token in tokens
+        for prefix in ("convoc", "postor", "proveedor", "particip")
+    ):
+        return {}
+    return {
+        "postor": 2.5,
+        "oferta": 2.5,
+        "presentar": 2.5,
+        "acreditar": 2.0,
+        "obligatorio": 2.0,
+        "requisito": 1.5,
+        "documento": 1.5,
+        "admision": 1.5,
+    }
+
+
+def _evidence_hint(text: str) -> str:
+    normalized = _normalize(text)
+    hints: list[str] = []
+    if (
+        "factor de evaluacion" in normalized
+        or "factores de evaluacion" in normalized
+        or "puntaje" in normalized
+        or re.search(r"\b\d+(?:[.,]\d+)?\s+puntos?\b", normalized)
+    ):
+        hints.append("contiene factores de evaluacion o puntaje; no asumir obligatoriedad")
+    if any(
+        phrase in normalized
+        for phrase in (
+            "debe presentar",
+            "debera presentar",
+            "documentos para la admision",
+            "requisito de admision",
+            "acreditar mediante",
+        )
+    ):
+        hints.append("contiene posibles requisitos o documentos de la oferta")
+    return "; ".join(hints) or "clasificar segun el encabezado y el texto"
+
+
 def _document_preference(document: str) -> int:
     normalized = _normalize(document)
     if "bases integradas" in normalized:
@@ -500,6 +543,7 @@ def select_context(corpus: Corpus, question: str, max_pages: int = 6) -> tuple[s
         token for token in _expanded_query_tokens(list(query_counts)) if token not in query_counts
     ]
     normalized_question = _normalize(question).strip()
+    intent_weights = _intent_token_weights(list(query_counts))
     scored: list[tuple[float, PageText]] = []
 
     for page in corpus.pages:
@@ -507,6 +551,7 @@ def select_context(corpus: Corpus, question: str, max_pages: int = 6) -> tuple[s
         page_counts = Counter(_tokens(page.text))
         score = sum(min(page_counts[token], 8) * (3.0 + query_counts[token]) for token in query_counts)
         score += sum(min(page_counts[token], 4) * 0.25 for token in support_tokens)
+        score += sum(min(page_counts[token], 6) * weight for token, weight in intent_weights.items())
         if normalized_question and len(normalized_question) >= 8 and normalized_question in normalized_text:
             score += 20
         if any(token in _normalize(page.document) for token in query_counts):
@@ -533,7 +578,10 @@ def select_context(corpus: Corpus, question: str, max_pages: int = 6) -> tuple[s
     references: list[dict] = []
     used_chars = 0
     for page in selected:
-        header = f"[Documento: {page.document} | Pagina: {page.page}]\n"
+        header = (
+            f"[Documento: {page.document} | Pagina: {page.page} | "
+            f"Senal de clasificacion: {_evidence_hint(page.text)}]\n"
+        )
         available = MAX_CONTEXT_CHARS - used_chars - len(header)
         if available <= 200:
             break
