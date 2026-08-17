@@ -219,6 +219,7 @@ REGLAS DE CONTENIDO:
 - No inventes, completes ni infieras requisitos, montos, fechas o condiciones que no aparezcan expresamente.
 - Conserva literalmente cifras, unidades, porcentajes, plazos y nombres de documentos.
 - Distingue siempre entre: (1) especificaciones tecnicas del bien o servicio, (2) requisitos o documentos obligatorios del postor y su oferta, y (3) factores de evaluacion que otorgan puntaje. No presentes un factor de evaluacion como requisito obligatorio.
+- Interpreta "convocados", "participantes" o "proveedores" como posibles postores. Si preguntan que se les pide, prioriza los requisitos y documentos que deben presentar o acreditar; no limites la respuesta a las especificaciones tecnicas del producto.
 - Si la pregunta es ambigua, organiza la respuesta en esas categorias y muestra solamente las que tengan evidencia.
 - Si falta informacion para responder, dilo claramente e indica que aspecto no se encontro.
 
