@@ -24,7 +24,7 @@ ALLOWED_HOSTS = {
     host.strip().lower()
     for host in os.getenv(
         "SEACE_ALLOWED_HOSTS",
-        "prod1.seace.gob.pe,prod2.seace.gob.pe",
+        "prod1.seace.gob.pe,prod2.seace.gob.pe,prod3.seace.gob.pe,prod4.seace.gob.pe",
     ).split(",")
     if host.strip()
 }
@@ -110,7 +110,7 @@ def download_document(
     temp_dir: str,
     *,
     suffix: str = ".pdf",
-    max_bytes: int = 12 * 1024 * 1024,
+    max_bytes: int = 50 * 1024 * 1024,
     timeout: tuple[int, int] = (8, 35),
 ) -> str:
     """Download a SEACE document to a temporary path with strict limits."""

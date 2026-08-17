@@ -2,3 +2,7 @@ name = "licigob-seace-edge-proxy"
 main = "worker.js"
 compatibility_date = "2026-08-17"
 workers_dev = true
+
+[vars]
+AI_SERVICE_URL = "https://licigob-ai-lite.agreeableglacier-948fb533.eastus.azurecontainerapps.io"
+BACKEND_URL = "https://licigob-backend-v2.azurewebsites.net"

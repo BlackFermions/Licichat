@@ -20,7 +20,7 @@ from typing import Iterable
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-from document_fetcher import DocumentDownloadError, download_document
+from document_fetcher import DocumentDownloadError, download_document, normalize_document_url
 
 try:
     import fitz
@@ -29,7 +29,7 @@ except ImportError:  # Allows lightweight unit tests without the PDF runtime.
 
 
 MAX_DOCUMENTS = int(os.getenv("LITE_MAX_DOCUMENTS", "2"))
-MAX_FILE_BYTES = int(os.getenv("LITE_MAX_FILE_BYTES", str(12 * 1024 * 1024)))
+MAX_FILE_BYTES = int(os.getenv("LITE_MAX_FILE_BYTES", str(50 * 1024 * 1024)))
 MAX_TOTAL_PAGES = int(os.getenv("LITE_MAX_TOTAL_PAGES", "120"))
 MAX_TOTAL_CHARS = int(os.getenv("LITE_MAX_TOTAL_CHARS", "600000"))
 MAX_CONTEXT_CHARS = int(os.getenv("LITE_MAX_CONTEXT_CHARS", "18000"))
@@ -278,6 +278,87 @@ def _extract_pdf(path: str, title: str, remaining_pages: int, remaining_chars: i
             pages.append(PageText(document=title[:200], page=index + 1, text=text))
             char_count += len(text)
     return pages, page_count, char_count
+
+
+def edge_cache_status(tender_id: str) -> dict:
+    """Return cache readiness without attempting a SEACE download."""
+    _, documents = get_tender_bundle(tender_id)
+    if not documents:
+        raise LiteRagError("no_pdf", "Esta licitacion no tiene documentos PDF compatibles.")
+    digest = _source_digest(documents)
+    cached = _load_cache(str(tender_id), digest)
+    required_documents = len(documents)
+    return {
+        "ready": bool(cached and cached.document_count >= required_documents),
+        "cached_documents": cached.document_count if cached else 0,
+        "required_documents": required_documents,
+    }
+
+
+def ingest_edge_pdf(tender_id: str, document_url: str, path: str) -> dict:
+    """Merge one trusted edge-fetched PDF into the tender text cache."""
+    tender, documents = get_tender_bundle(tender_id)
+    if not documents:
+        raise LiteRagError("no_pdf", "Esta licitacion no tiene documentos PDF compatibles.")
+
+    normalized_url = normalize_document_url(document_url)
+    matched_index = -1
+    matched_document = None
+    for index, document in enumerate(documents):
+        try:
+            candidate_url = normalize_document_url(document.get("url"))
+        except DocumentDownloadError:
+            continue
+        if candidate_url == normalized_url:
+            matched_index = index
+            matched_document = document
+            break
+    if matched_document is None:
+        raise LiteRagError("document_mismatch", "El documento no pertenece a la licitacion.")
+
+    base_title = str(matched_document.get("title") or "Documento PDF")[:180]
+    duplicate_count = sum(
+        1 for document in documents if str(document.get("title") or "Documento PDF")[:180] == base_title
+    )
+    display_title = f"{base_title} ({matched_index + 1})" if duplicate_count > 1 else base_title
+    page_budget = max(1, MAX_TOTAL_PAGES // len(documents))
+    char_budget = max(1, MAX_TOTAL_CHARS // len(documents))
+    pages, _, _ = _extract_pdf(path, display_title, page_budget, char_budget)
+
+    digest = _source_digest(documents)
+    existing = _load_cache(str(tender_id), digest)
+    existing_pages = existing.pages if existing else []
+    merged_pages = [page for page in existing_pages if page.document != display_title]
+    merged_pages.extend(pages)
+    attempted_documents = max(
+        existing.document_count if existing else 0,
+        matched_index + 1,
+    )
+
+    if not merged_pages:
+        raise LiteRagError(
+            "scanned_pdf",
+            "El PDF no contiene texto seleccionable y requiere OCR.",
+        )
+
+    corpus = Corpus(
+        tender_id=str(tender_id),
+        source_digest=digest,
+        pages=merged_pages,
+        document_count=attempted_documents,
+        total_pages=len(merged_pages),
+        total_chars=sum(len(page.text) for page in merged_pages),
+        scan_suspected=bool(existing and existing.scan_suspected) or not pages,
+        cache_hit=False,
+    )
+    _save_cache(corpus)
+    _memory_cache_set(str(tender_id), tender, corpus)
+    return {
+        "ready": corpus.document_count >= len(documents),
+        "document_pages": len(pages),
+        "cached_documents": corpus.document_count,
+        "required_documents": len(documents),
+    }
 
 
 def prepare_corpus(tender_id: str) -> tuple[dict, Corpus]:

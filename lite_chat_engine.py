@@ -6,22 +6,32 @@ import hmac
 import json
 import logging
 import os
+import tempfile
 import time
 
 import httpx
 from flask import Flask, Response, jsonify, request
 from openai import AzureOpenAI
 
-from lite_rag_engine import LiteRagError, prepare_corpus, select_context, tender_summary
+from lite_rag_engine import (
+    MAX_FILE_BYTES,
+    LiteRagError,
+    edge_cache_status,
+    ingest_edge_pdf,
+    prepare_corpus,
+    select_context,
+    tender_summary,
+)
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("licigob-ai-lite")
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 256 * 1024
+app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_BYTES + (64 * 1024)
 
 SERVICE_KEY = os.getenv("LITE_SERVICE_KEY", "")
+EDGE_INGEST_KEY = os.getenv("EDGE_INGEST_KEY", "")
 CHAT_MODEL = os.getenv("CHAT_DEPLOYMENT", "gpt-4o-mini")
 
 http_client = httpx.Client(
@@ -40,6 +50,15 @@ openai_client = AzureOpenAI(
 def _authorized() -> bool:
     supplied = request.headers.get("X-Service-Key", "")
     return bool(SERVICE_KEY and supplied and hmac.compare_digest(SERVICE_KEY, supplied))
+
+
+def _edge_authorized() -> bool:
+    supplied = request.headers.get("X-Edge-Ingest-Key", "")
+    return bool(
+        EDGE_INGEST_KEY
+        and supplied
+        and hmac.compare_digest(EDGE_INGEST_KEY, supplied)
+    )
 
 
 def _extract_tender_id(data: dict) -> str:
@@ -92,6 +111,75 @@ def inspect_document():
         )
     except LiteRagError as exc:
         return jsonify({"status": "error", "code": exc.code, "message": str(exc)}), 422
+
+
+@app.post("/api/v1/edge-status")
+def edge_status():
+    if not _edge_authorized():
+        return jsonify({"status": "error", "code": "unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    tender_id = _extract_tender_id(data)
+    if not tender_id:
+        return jsonify({"status": "error", "code": "missing_tender_id"}), 400
+    try:
+        return jsonify({"status": "ready", **edge_cache_status(tender_id)})
+    except LiteRagError as exc:
+        return jsonify({"status": "error", "code": exc.code, "message": str(exc)}), 422
+
+
+@app.post("/api/v1/edge-ingest")
+def edge_ingest():
+    if not _edge_authorized():
+        return jsonify({"status": "error", "code": "unauthorized"}), 401
+
+    tender_id = str(request.headers.get("X-Tender-Id") or "").strip()
+    document_url = str(request.headers.get("X-Document-Url") or "").strip()
+    if not tender_id or not document_url:
+        return jsonify({"status": "error", "code": "invalid_request"}), 400
+    if request.content_length and request.content_length > MAX_FILE_BYTES:
+        return jsonify({"status": "error", "code": "file_too_large"}), 413
+
+    path = ""
+    written = 0
+    try:
+        with tempfile.NamedTemporaryFile(prefix="seace_edge_", suffix=".pdf", delete=False) as handle:
+            path = handle.name
+            while True:
+                chunk = request.stream.read(64 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > MAX_FILE_BYTES:
+                    return jsonify({"status": "error", "code": "file_too_large"}), 413
+                handle.write(chunk)
+
+        if written < 5:
+            return jsonify({"status": "error", "code": "empty_file"}), 422
+        with open(path, "rb") as handle:
+            if handle.read(5) != b"%PDF-":
+                return jsonify({"status": "error", "code": "unexpected_content"}), 422
+
+        result = ingest_edge_pdf(tender_id, document_url, path)
+        logger.info(
+            "edge_document_ingested tender=%s bytes=%s pages=%s ready=%s",
+            tender_id,
+            written,
+            result.get("document_pages"),
+            result.get("ready"),
+        )
+        return jsonify({"status": "ready", **result})
+    except LiteRagError as exc:
+        logger.warning("edge_document_rejected tender=%s code=%s", tender_id, exc.code)
+        return jsonify({"status": "error", "code": exc.code, "message": str(exc)}), 422
+    except Exception:
+        logger.exception("edge_document_ingest_failed tender=%s", tender_id)
+        return jsonify({"status": "error", "code": "ingest_failed"}), 500
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
 
 
 @app.post("/api/v1/chat_stream")
