@@ -18,6 +18,8 @@ SEACE_USER_AGENT = os.getenv(
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36",
 )
 SEACE_REFERER = os.getenv("SEACE_REFERER", "https://prod1.seace.gob.pe/portal/")
+SEACE_DOCUMENT_PROXY_URL = os.getenv("SEACE_DOCUMENT_PROXY_URL", "").strip()
+SEACE_DOCUMENT_PROXY_KEY = os.getenv("SEACE_DOCUMENT_PROXY_KEY", "").strip()
 ALLOWED_HOSTS = {
     host.strip().lower()
     for host in os.getenv(
@@ -84,6 +86,25 @@ def _validate_magic(path: Path, suffix: str) -> None:
         )
 
 
+def _proxy_config() -> tuple[str, str] | None:
+    if not SEACE_DOCUMENT_PROXY_URL:
+        return None
+    parsed = urlparse(SEACE_DOCUMENT_PROXY_URL)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+        or not SEACE_DOCUMENT_PROXY_KEY
+    ):
+        raise DocumentDownloadError(
+            "invalid_proxy_config",
+            "La configuracion del proxy de documentos no es valida.",
+        )
+    return SEACE_DOCUMENT_PROXY_URL, parsed.hostname.lower()
+
+
 def download_document(
     raw_url: str,
     temp_dir: str,
@@ -113,12 +134,43 @@ def download_document(
                 allow_redirects=True,
             )
             if response.status_code == 403:
-                raise DocumentDownloadError("seace_forbidden", "SEACE rechazo la descarga.")
+                response.close()
+                proxy = _proxy_config()
+                if not proxy:
+                    raise DocumentDownloadError("seace_forbidden", "SEACE rechazo la descarga.")
+                proxy_url, proxy_host = proxy
+                response = session.post(
+                    proxy_url,
+                    headers={
+                        "User-Agent": SEACE_USER_AGENT,
+                        "Accept": "application/pdf,application/octet-stream",
+                        "Content-Type": "application/json",
+                        "X-Proxy-Key": SEACE_DOCUMENT_PROXY_KEY,
+                    },
+                    json={"url": url},
+                    stream=True,
+                    timeout=timeout,
+                    allow_redirects=False,
+                )
+                if response.status_code in {401, 403}:
+                    raise DocumentDownloadError(
+                        "proxy_forbidden",
+                        "El proxy de documentos rechazo la descarga.",
+                    )
+                final_host = (urlparse(response.url).hostname or "").lower()
+                if final_host != proxy_host:
+                    raise DocumentDownloadError(
+                        "unsafe_proxy_redirect",
+                        "El proxy redirigio a un origen no permitido.",
+                    )
+            else:
+                final_host = (urlparse(response.url).hostname or "").lower()
+                if final_host not in ALLOWED_HOSTS:
+                    raise DocumentDownloadError(
+                        "unsafe_redirect",
+                        "SEACE redirigio a un origen no permitido.",
+                    )
             response.raise_for_status()
-
-            final_host = (urlparse(response.url).hostname or "").lower()
-            if final_host not in ALLOWED_HOSTS:
-                raise DocumentDownloadError("unsafe_redirect", "SEACE redirigio a un origen no permitido.")
 
             declared_size = int(response.headers.get("Content-Length") or 0)
             if declared_size > max_bytes:

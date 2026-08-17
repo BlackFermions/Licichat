@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -36,6 +37,8 @@ CACHE_TTL_DAYS = int(os.getenv("LITE_CACHE_TTL_DAYS", "14"))
 MEMORY_CACHE_SECONDS = int(os.getenv("LITE_MEMORY_CACHE_SECONDS", "1800"))
 MEMORY_CACHE_MAX_ITEMS = int(os.getenv("LITE_MEMORY_CACHE_MAX_ITEMS", "20"))
 CACHE_PREFIX = "LITE_RAG_V1\n"
+
+logger = logging.getLogger("licigob-ai-lite.rag")
 
 _MEMORY_CACHE: dict[str, tuple[float, dict, Corpus]] = {}
 _MEMORY_CACHE_LOCK = threading.Lock()
@@ -299,7 +302,7 @@ def prepare_corpus(tender_id: str) -> tuple[dict, Corpus]:
     failures: list[str] = []
 
     with tempfile.TemporaryDirectory(prefix="licigob-lite-") as temp_dir:
-        for document in documents:
+        for index, document in enumerate(documents):
             if total_pages >= MAX_TOTAL_PAGES or total_chars >= MAX_TOTAL_CHARS:
                 break
             try:
@@ -309,10 +312,13 @@ def prepare_corpus(tender_id: str) -> tuple[dict, Corpus]:
                     suffix=".pdf",
                     max_bytes=MAX_FILE_BYTES,
                 )
+                remaining_documents = len(documents) - index
+                remaining_pages = MAX_TOTAL_PAGES - total_pages
+                page_budget = max(1, remaining_pages // remaining_documents)
                 extracted, counted_pages, counted_chars = _extract_pdf(
                     path,
                     str(document.get("title") or "Documento PDF"),
-                    MAX_TOTAL_PAGES - total_pages,
+                    page_budget,
                     MAX_TOTAL_CHARS - total_chars,
                 )
                 pages.extend(extracted)
@@ -321,6 +327,12 @@ def prepare_corpus(tender_id: str) -> tuple[dict, Corpus]:
                 processed_documents += 1
             except DocumentDownloadError as exc:
                 failures.append(exc.code)
+                logger.warning(
+                    "document_download_failed tender=%s title=%s code=%s",
+                    tender_id,
+                    str(document.get("title") or "Documento PDF")[:120],
+                    exc.code,
+                )
             except LiteRagError:
                 failures.append("pdf_runtime_missing")
             except Exception:
@@ -329,7 +341,12 @@ def prepare_corpus(tender_id: str) -> tuple[dict, Corpus]:
     nonempty_ratio = len(pages) / max(total_pages, 1)
     scan_suspected = total_chars < 500 or (total_pages >= 4 and nonempty_ratio < 0.25)
     if not pages or total_chars < 300:
-        code = "ocr_required" if scan_suspected else (failures[0] if failures else "no_text")
+        if processed_documents == 0 and failures:
+            raise LiteRagError(
+                failures[0],
+                "No pudimos descargar los documentos desde SEACE.",
+            )
+        code = "ocr_required" if scan_suspected else "no_text"
         message = (
             "El PDF parece escaneado y requiere OCR."
             if scan_suspected

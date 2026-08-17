@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from document_fetcher import DocumentDownloadError, download_document, normalize_document_url
 
@@ -9,6 +10,24 @@ SAMPLE_URL = (
     "https://prod1.seace.gob.pe/SeaceWeb-PRO/"
     "SdescargarArchivoAlfresco?fileCode=229a6a07-a352-4647-a2aa-0dcad96021eb"
 )
+
+
+class FakeResponse:
+    def __init__(self, status_code, url, content=b"", headers=None):
+        self.status_code = status_code
+        self.url = url
+        self._content = content
+        self.headers = headers or {}
+
+    def close(self):
+        return None
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+    def iter_content(self, chunk_size):
+        yield self._content
 
 
 class DocumentFetcherTests(unittest.TestCase):
@@ -26,6 +45,27 @@ class DocumentFetcherTests(unittest.TestCase):
                 "?fileCode=229a6a07-a352-4647-a2aa-0dcad96021eb"
             )
         self.assertEqual(ctx.exception.code, "untrusted_host")
+
+    def test_uses_authenticated_proxy_when_azure_is_forbidden(self):
+        direct = FakeResponse(403, SAMPLE_URL)
+        proxied = FakeResponse(
+            200,
+            "https://licigob-proxy.example.workers.dev/",
+            b"%PDF-1.7\nfixture",
+            {"Content-Length": "16"},
+        )
+        with (
+            patch("document_fetcher.SEACE_DOCUMENT_PROXY_URL", proxied.url),
+            patch("document_fetcher.SEACE_DOCUMENT_PROXY_KEY", "test-key"),
+            patch("requests.Session.get", return_value=direct),
+            patch("requests.Session.post", return_value=proxied) as post,
+            tempfile.TemporaryDirectory() as temp_dir,
+        ):
+            path = download_document(SAMPLE_URL, temp_dir)
+            with open(path, "rb") as handle:
+                self.assertEqual(handle.read(5), b"%PDF-")
+            self.assertEqual(post.call_args.kwargs["json"], {"url": SAMPLE_URL})
+            self.assertEqual(post.call_args.kwargs["headers"]["X-Proxy-Key"], "test-key")
 
     @unittest.skipUnless(os.getenv("RUN_LIVE_SEACE_TEST") == "1", "live SEACE test")
     def test_live_pdf_download(self):
