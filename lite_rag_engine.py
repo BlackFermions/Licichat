@@ -544,27 +544,60 @@ def select_context(corpus: Corpus, question: str, max_pages: int = 6) -> tuple[s
     ]
     normalized_question = _normalize(question).strip()
     intent_weights = _intent_token_weights(list(query_counts))
-    scored: list[tuple[float, PageText]] = []
+    scored: list[tuple[float, float, float, PageText]] = []
 
     for page in corpus.pages:
         normalized_text = _normalize(page.text)
         page_counts = Counter(_tokens(page.text))
-        score = sum(min(page_counts[token], 8) * (3.0 + query_counts[token]) for token in query_counts)
-        score += sum(min(page_counts[token], 4) * 0.25 for token in support_tokens)
-        score += sum(min(page_counts[token], 6) * weight for token, weight in intent_weights.items())
+        direct_score = sum(
+            min(page_counts[token], 8) * (3.0 + query_counts[token])
+            for token in query_counts
+        )
+        support_score = sum(min(page_counts[token], 4) * 0.25 for token in support_tokens)
+        intent_score = sum(
+            min(page_counts[token], 6) * weight for token, weight in intent_weights.items()
+        )
+        score = direct_score + support_score + intent_score
         if normalized_question and len(normalized_question) >= 8 and normalized_question in normalized_text:
             score += 20
         if any(token in _normalize(page.document) for token in query_counts):
             score += 2
-        scored.append((score, page))
+        scored.append((score, direct_score, intent_score, page))
 
     scored.sort(
-        key=lambda item: (item[0], _document_preference(item[1].document), -item[1].page),
+        key=lambda item: (item[0], _document_preference(item[3].document), -item[3].page),
         reverse=True,
     )
     selected: list[PageText] = []
-    for score, page in scored:
+    if intent_weights:
+        intent_ranked = sorted(
+            scored,
+            key=lambda item: (
+                item[2],
+                item[1],
+                _document_preference(item[3].document),
+                -item[3].page,
+            ),
+            reverse=True,
+        )
+        direct_ranked = sorted(
+            scored,
+            key=lambda item: (
+                item[1],
+                _document_preference(item[3].document),
+                -item[3].page,
+            ),
+            reverse=True,
+        )
+        for ranked in (intent_ranked, direct_ranked):
+            candidate = next((item[3] for item in ranked if item[0] > 0), None)
+            if candidate and not _is_near_duplicate(candidate, selected):
+                selected.append(candidate)
+
+    for score, _, _, page in scored:
         if score <= 0:
+            continue
+        if page in selected:
             continue
         if _is_near_duplicate(page, selected):
             continue

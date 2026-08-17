@@ -76,6 +76,7 @@ class LiteRagSelectionTests(unittest.TestCase):
         )
         _, references = select_context(corpus, "Que especificaciones piden a los convocados?")
         self.assertEqual(references[0]["page"], 9)
+        self.assertEqual(references[1]["page"], 32)
         self.assertIn({"document": "Bases Integradas", "page": 32}, references)
 
     def test_labels_scored_evidence_in_context(self):
@@ -111,7 +112,8 @@ class LiteRagSelectionTests(unittest.TestCase):
             total_chars=1200,
         )
         _, references = select_context(corpus, "Que especificaciones piden al postor?")
-        self.assertEqual(references[0], {"document": "Bases Integradas", "page": 33})
+        self.assertEqual(references[0], {"document": "Bases Integradas", "page": 22})
+        self.assertIn({"document": "Bases Integradas", "page": 33}, references)
         self.assertNotIn({"document": "Bases Administrativas", "page": 32}, references)
 
 

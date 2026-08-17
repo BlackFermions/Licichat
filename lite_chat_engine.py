@@ -213,6 +213,14 @@ def chat_stream():
                 if supplier_question
                 else "Clasifica la evidencia antes de responder y contesta solamente la consulta realizada."
             )
+            user_prompt = (
+                f"Pregunta original: {message[:1800]}\n\n"
+                "Interpretacion para responder: resume lo que se exige al postor para participar o presentar "
+                "su oferta. Incluye por separado las especificaciones del producto y las mejoras que solo "
+                "otorgan puntaje cuando exista evidencia de ellas."
+                if supplier_question
+                else message[:2000]
+            )
             cache_label = "cache" if corpus.cache_hit else "download"
             logger.info(
                 "document_ready tender=%s source=%s docs=%s pages=%s chars=%s elapsed_ms=%s",
@@ -271,7 +279,7 @@ CONTROL FINAL ANTES DE RESPONDER:
                 role = item.get("role")
                 if role in {"user", "assistant"}:
                     messages.append({"role": role, "content": str(item.get("content") or "")[:1000]})
-            messages.append({"role": "user", "content": message[:2000]})
+            messages.append({"role": "user", "content": user_prompt})
 
             yield "[STATUS]Analizando las paginas relevantes...\n"
             stream = openai_client.chat.completions.create(
