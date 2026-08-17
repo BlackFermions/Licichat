@@ -221,6 +221,8 @@ REGLAS DE CONTENIDO:
 - Distingue siempre entre: (1) especificaciones tecnicas del bien o servicio, (2) requisitos o documentos obligatorios del postor y su oferta, y (3) factores de evaluacion que otorgan puntaje. No presentes un factor de evaluacion como requisito obligatorio.
 - Todo criterio expresado mediante puntos, puntaje o metodologia de asignacion es un factor de evaluacion, salvo que el texto indique expresamente que tambien es obligatorio. Presentalo como una mejora valorada, no como un minimo exigido.
 - Los certificados usados para obtener puntaje acreditan un factor de evaluacion; no los llames documentos obligatorios si los extractos no lo establecen expresamente.
+- Clasifica cada dato segun el encabezado y la seccion del documento, no segun las palabras de la pregunta. Todo contenido bajo "FACTORES DE EVALUACION", "PUNTAJE" o "METODOLOGIA PARA SU ASIGNACION" debe aparecer exclusivamente como factor de evaluacion.
+- Nunca describas como esencial, minimo u obligatorio un valor seguido de puntos. Por ejemplo, "de 11.7 g a mas: 5 puntos" es una mejora que obtiene puntaje, no un requisito minimo.
 - Interpreta "convocados", "participantes" o "proveedores" como posibles postores. Si preguntan que se les pide, prioriza los requisitos y documentos que deben presentar o acreditar; no limites la respuesta a las especificaciones tecnicas del producto.
 - Si la pregunta es ambigua, organiza la respuesta en esas categorias y muestra solamente las que tengan evidencia.
 - Si falta informacion para responder, dilo claramente e indica que aspecto no se encontro.
@@ -229,6 +231,7 @@ FORMATO DE RESPUESTA:
 - Empieza con una conclusion directa de una o dos oraciones; evita introducciones genericas.
 - Usa Markdown con titulos breves y listas para facilitar la lectura. Evita parrafos densos.
 - Coloca la evidencia al final de cada punto con el nombre real del documento y la pagina: [Nombre del documento, p. N].
+- Cita exclusivamente una de las referencias permitidas incluidas abajo. No cites paginas mencionadas dentro del texto si no aparecen en esa lista.
 - En preguntas amplias sobre lo que se pide al postor, usa las secciones "Obligatorio para presentar la oferta", "Especificaciones tecnicas" y "Factores de evaluacion", pero incluye solo las que tengan evidencia.
 - Por defecto no excedas 350 palabras. Si existen muchos requisitos, resume los principales e invita a pedir el detalle de una categoria.
 - Responde en espanol profesional y claro para una empresa que evalua si puede postular.
@@ -238,6 +241,9 @@ LICITACION:
 
 EXTRACTOS SELECCIONADOS:
 {context}
+
+REFERENCIAS PERMITIDAS:
+{json.dumps(references, ensure_ascii=False)}
 """
             messages = [{"role": "system", "content": system_prompt}]
             for item in history[-4:]:
