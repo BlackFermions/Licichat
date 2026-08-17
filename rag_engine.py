@@ -6,12 +6,12 @@ import shutil
 import time
 import zipfile
 import psycopg2
-import requests
 import numpy as np
 from datetime import datetime
 from psycopg2.extras import RealDictCursor
 from typing import List, Dict, Tuple
 from dotenv import load_dotenv
+from document_fetcher import DocumentDownloadError, download_document
 
 load_dotenv()
 
@@ -177,35 +177,19 @@ def download_file(url: str, temp_dir: str, suffix: str = ".pdf") -> str | None:
     try:
         print(f"    🌐 {url[:70]}...")
         t = time.time()
-
-        # Verificar tamaño antes de descargar
-        try:
-            head = requests.head(url, timeout=8, allow_redirects=True)
-            size = int(head.headers.get("Content-Length", 0))
-            if size > MAX_PDF_SIZE:
-                print(f"    ⚠️  Archivo muy grande ({size/1024/1024:.1f}MB) — omitido")
-                return None
-        except Exception:
-            pass
-
-        resp = requests.get(url, stream=True, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
-
-        path = os.path.join(temp_dir, f"doc_{int(time.time()*1000)}{suffix}")
-        size = 0
-        with open(path, "wb") as f:
-            for chunk in resp.iter_content(8192):
-                f.write(chunk)
-                size += len(chunk)
-                if size > MAX_PDF_SIZE:
-                    print(f"    ⚠️  Archivo demasiado grande — abortando")
-                    return None
-
+        path = download_document(
+            url,
+            temp_dir,
+            suffix=suffix,
+            max_bytes=MAX_PDF_SIZE,
+            timeout=(8, REQUEST_TIMEOUT),
+        )
+        size = os.path.getsize(path)
         print(f"    💾 {size/1024:.0f}KB en {time.time()-t:.1f}s")
         return path
 
-    except requests.exceptions.Timeout:
-        print(f"    ⏱️  Timeout")
+    except DocumentDownloadError as e:
+        print(f"    ❌ {e.code}: {e}")
         return None
     except Exception as e:
         print(f"    ❌ {e}")

@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-lite.txt .
+RUN pip install --no-cache-dir -r requirements-lite.txt
+
+COPY document_fetcher.py lite_rag_engine.py lite_chat_engine.py ./
+
+EXPOSE 5008
+
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5008", "--timeout", "110", "--worker-class", "gthread", "--threads", "2", "--keep-alive", "5", "lite_chat_engine:app"]
