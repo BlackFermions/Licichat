@@ -473,6 +473,27 @@ def _expanded_query_tokens(tokens: list[str]) -> list[str]:
     return expanded
 
 
+def _document_preference(document: str) -> int:
+    normalized = _normalize(document)
+    if "bases integradas" in normalized:
+        return 2
+    if "bases administrativas" in normalized:
+        return 1
+    return 0
+
+
+def _is_near_duplicate(candidate: PageText, selected: list[PageText]) -> bool:
+    candidate_tokens = set(_tokens(candidate.text))
+    if not candidate_tokens:
+        return False
+    for page in selected:
+        page_tokens = set(_tokens(page.text))
+        union = candidate_tokens | page_tokens
+        if union and len(candidate_tokens & page_tokens) / len(union) >= 0.88:
+            return True
+    return False
+
+
 def select_context(corpus: Corpus, question: str, max_pages: int = 6) -> tuple[str, list[dict]]:
     query_counts = Counter(_tokens(question))
     support_tokens = [
@@ -492,8 +513,19 @@ def select_context(corpus: Corpus, question: str, max_pages: int = 6) -> tuple[s
             score += 2
         scored.append((score, page))
 
-    scored.sort(key=lambda item: (item[0], -item[1].page), reverse=True)
-    selected = [page for score, page in scored if score > 0][:max_pages]
+    scored.sort(
+        key=lambda item: (item[0], _document_preference(item[1].document), -item[1].page),
+        reverse=True,
+    )
+    selected: list[PageText] = []
+    for score, page in scored:
+        if score <= 0:
+            continue
+        if _is_near_duplicate(page, selected):
+            continue
+        selected.append(page)
+        if len(selected) >= max_pages:
+            break
     if not selected:
         selected = corpus.pages[: min(3, max_pages)]
 

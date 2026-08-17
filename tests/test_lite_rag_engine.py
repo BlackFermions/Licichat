@@ -77,6 +77,24 @@ class LiteRagSelectionTests(unittest.TestCase):
         _, references = select_context(corpus, "Que especificaciones piden a los convocados?")
         self.assertEqual(references[0]["page"], 32)
 
+    def test_prefers_integrated_bases_and_skips_duplicate_pages(self):
+        duplicate_text = "Especificaciones de proteina energia y condiciones del producto. " * 12
+        corpus = Corpus(
+            tender_id="1",
+            source_digest="digest",
+            pages=[
+                PageText("Bases Administrativas", 32, duplicate_text),
+                PageText("Bases Integradas", 33, duplicate_text),
+                PageText("Bases Integradas", 22, "El postor presenta registro sanitario obligatorio."),
+            ],
+            document_count=2,
+            total_pages=3,
+            total_chars=1200,
+        )
+        _, references = select_context(corpus, "Que especificaciones piden al postor?")
+        self.assertEqual(references[0], {"document": "Bases Integradas", "page": 33})
+        self.assertNotIn({"document": "Bases Administrativas", "page": 32}, references)
+
 
 if __name__ == "__main__":
     unittest.main()
