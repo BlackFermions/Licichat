@@ -462,8 +462,20 @@ def _tokens(value: str) -> list[str]:
     ]
 
 
+def _query_tokens(value: str) -> list[str]:
+    tokens = _tokens(value)
+    expanded = list(tokens)
+    if any(token.startswith("especific") for token in tokens):
+        expanded.extend(["tecnica", "tecnico", "requisito", "caracteristica", "ficha", "cumplimiento"])
+    if any(token.startswith("convoc") for token in tokens):
+        expanded.extend(["postor", "proveedor", "participante", "oferta"])
+    if any(token.startswith("document") for token in tokens):
+        expanded.extend(["acreditar", "certificado", "declaracion", "registro", "presentar"])
+    return expanded
+
+
 def select_context(corpus: Corpus, question: str, max_pages: int = 6) -> tuple[str, list[dict]]:
-    query_tokens = _tokens(question)
+    query_tokens = _query_tokens(question)
     query_counts = Counter(query_tokens)
     normalized_question = _normalize(question).strip()
     scored: list[tuple[float, PageText]] = []

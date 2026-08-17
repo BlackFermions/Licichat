@@ -34,6 +34,26 @@ class LiteRagSelectionTests(unittest.TestCase):
         self.assertIn("Contenido inicial", context)
         self.assertEqual(references[0]["page"], 1)
 
+    def test_expands_procurement_language_for_convoked_suppliers(self):
+        corpus = Corpus(
+            tender_id="1",
+            source_digest="digest",
+            pages=[
+                PageText("Bases", 1, "Cronograma general del procedimiento."),
+                PageText(
+                    "Bases Integradas",
+                    18,
+                    "El postor debe presentar el registro sanitario y el certificado HACCP.",
+                ),
+            ],
+            document_count=1,
+            total_pages=2,
+            total_chars=120,
+        )
+        context, references = select_context(corpus, "Que especificaciones piden a los convocados?")
+        self.assertIn("registro sanitario", context)
+        self.assertEqual(references[0]["page"], 18)
+
 
 if __name__ == "__main__":
     unittest.main()
