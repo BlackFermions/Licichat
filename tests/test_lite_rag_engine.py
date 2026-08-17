@@ -97,6 +97,25 @@ class LiteRagSelectionTests(unittest.TestCase):
         context, _ = select_context(corpus, "Que especificaciones piden?")
         self.assertIn("no asumir obligatoriedad", context)
 
+    def test_includes_continuation_after_supplier_requirements(self):
+        corpus = Corpus(
+            tender_id="1",
+            source_digest="digest",
+            pages=[
+                PageText("Bases Integradas", 21, "El postor debe presentar documentos obligatorios."),
+                PageText("Bases Integradas", 22, "Continuacion: declaraciones y anexos de la oferta."),
+                PageText("Bases Integradas", 33, "Especificaciones: proteina de 11.7 g a mas."),
+            ],
+            document_count=1,
+            total_pages=3,
+            total_chars=180,
+        )
+        _, references = select_context(corpus, "Que piden a los convocados?")
+        self.assertEqual(references[:2], [
+            {"document": "Bases Integradas", "page": 21},
+            {"document": "Bases Integradas", "page": 22},
+        ])
+
     def test_prefers_integrated_bases_and_skips_duplicate_pages(self):
         duplicate_text = "Especificaciones de proteina energia y condiciones del producto. " * 12
         corpus = Corpus(

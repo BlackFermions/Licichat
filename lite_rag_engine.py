@@ -593,6 +593,18 @@ def select_context(corpus: Corpus, question: str, max_pages: int = 6) -> tuple[s
             candidate = next((item[3] for item in ranked if item[0] > 0), None)
             if candidate and not _is_near_duplicate(candidate, selected):
                 selected.append(candidate)
+                if ranked is intent_ranked:
+                    continuation = next(
+                        (
+                            page
+                            for page in corpus.pages
+                            if page.document == candidate.document
+                            and page.page == candidate.page + 1
+                        ),
+                        None,
+                    )
+                    if continuation and not _is_near_duplicate(continuation, selected):
+                        selected.append(continuation)
 
     for score, _, _, page in scored:
         if score <= 0:

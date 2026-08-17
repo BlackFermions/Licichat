@@ -244,6 +244,7 @@ REGLAS DE CONTENIDO:
 - Los certificados usados para obtener puntaje acreditan un factor de evaluacion; no los llames documentos obligatorios si los extractos no lo establecen expresamente.
 - Clasifica cada dato segun el encabezado y la seccion del documento, no segun las palabras de la pregunta. Todo contenido bajo "FACTORES DE EVALUACION", "PUNTAJE" o "METODOLOGIA PARA SU ASIGNACION" debe aparecer exclusivamente como factor de evaluacion.
 - Nunca describas como esencial, minimo u obligatorio un valor seguido de puntos. Por ejemplo, "de 11.7 g a mas: 5 puntos" es una mejora que obtiene puntaje, no un requisito minimo.
+- Si un valor tecnico aparece solamente en un extracto marcado como factor de evaluacion o puntaje, no crees una seccion de especificaciones tecnicas con ese valor ni digas que debe cumplirse. Muestralo solo como mejora puntuable.
 - Interpreta "convocados", "participantes" o "proveedores" como posibles postores. Si preguntan que se les pide, prioriza los requisitos y documentos que deben presentar o acreditar; no limites la respuesta a las especificaciones tecnicas del producto.
 - Si la pregunta es ambigua, organiza la respuesta en esas categorias y muestra solamente las que tengan evidencia.
 - Si falta informacion para responder, dilo claramente e indica que aspecto no se encontro.
@@ -274,6 +275,7 @@ INSTRUCCION ESPECIFICA PARA ESTA PREGUNTA:
 
 CONTROL FINAL ANTES DE RESPONDER:
 - Si un dato concede puntos, debe aparecer solo como factor de evaluacion y no como requisito obligatorio.
+- No repitas un mismo dato en "Especificaciones tecnicas" y "Factores de evaluacion".
 - Usa "obligatorio" unicamente cuando el extracto indique que se debe presentar, acreditar o cumplir para admitir la oferta.
 - No combines ambos grupos en una misma lista.
 """
