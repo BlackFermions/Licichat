@@ -8,6 +8,7 @@ import logging
 import os
 import tempfile
 import time
+import unicodedata
 
 import httpx
 from flask import Flask, Response, jsonify, request
@@ -74,13 +75,56 @@ def _extract_tender_id(data: dict) -> str:
 
 
 def _normalize_message(value: str) -> str:
-    accents = str.maketrans("áéíóúüñÁÉÍÓÚÜÑ", "aeiouunAEIOUUN")
-    return str(value or "").translate(accents).lower()
+    normalized = unicodedata.normalize("NFKD", str(value or "").lower())
+    return "".join(char for char in normalized if not unicodedata.combining(char))
 
 
 def _message_has_any(message: str, markers: tuple[str, ...]) -> bool:
     normalized = _normalize_message(message)
     return any(marker in normalized for marker in markers)
+
+
+def _contract_delivery_question(message: str) -> bool:
+    normalized = _normalize_message(message)
+    if "contrat" not in normalized:
+        return False
+    delivery_markers = (
+        "dirig",
+        "remit",
+        "envi",
+        "manda",
+        "present",
+        "suscrib",
+        "perfeccion",
+        "entreg",
+        "mesa",
+        "a quien",
+        "a que correo",
+        "que correo",
+        "a que direccion",
+        "donde",
+    )
+    if not any(marker in normalized for marker in delivery_markers):
+        return False
+    notification_only = any(
+        marker in normalized
+        for marker in ("notificacion", "notificar", "consignar", "consigno")
+    )
+    explicit_delivery = any(
+        marker in normalized
+        for marker in (
+            "dirig",
+            "remit",
+            "envi",
+            "manda",
+            "present",
+            "suscrib",
+            "perfeccion",
+            "entreg",
+            "mesa",
+        )
+    )
+    return explicit_delivery or not notification_only
 
 
 def _wants_detailed_answer(message: str) -> bool:
@@ -126,6 +170,15 @@ def _build_question_guidance(message: str, supplier_question: bool, wants_detail
             "La consulta pide orientacion sobre impugnacion. Si los extractos no muestran el procedimiento "
             "de apelacion, no niegues de plano su existencia. Responde que no aparece confirmado en los "
             "extractos revisados y sugiere revisar la seccion de recursos, impugnaciones o la normativa aplicable."
+        )
+
+    if _contract_delivery_question(message):
+        guidance.append(
+            "La consulta busca a quien, a que correo o a que direccion se remite, envia, presenta, "
+            "suscribe o perfecciona el contrato. Prioriza datos de remision, direccion electronica, "
+            "mesa de partes, unidad de tramite documentario u organo encargado de contrataciones. "
+            "No confundas esto con el correo que el postor debe consignar para recibir notificaciones, "
+            "salvo que el usuario pregunte especificamente por notificaciones."
         )
 
     if _message_has_any(message, ("significa", "quiere decir", "en la practica", "puedo", "deberia", "conviene")):
@@ -281,14 +334,23 @@ def chat_stream():
             )
             wants_detail = _wants_detailed_answer(message)
             question_guidance = _build_question_guidance(message, supplier_question, wants_detail)
-            user_prompt = (
-                f"Pregunta original: {message[:1800]}\n\n"
-                "Interpretacion para responder: resume lo que se exige al postor para participar o presentar "
-                "su oferta. Incluye por separado las especificaciones del producto y las mejoras que solo "
-                "otorgan puntaje cuando exista evidencia de ellas."
-                if supplier_question
-                else message[:2000]
-            )
+            if supplier_question:
+                user_prompt = (
+                    f"Pregunta original: {message[:1800]}\n\n"
+                    "Interpretacion para responder: resume lo que se exige al postor para participar o presentar "
+                    "su oferta. Incluye por separado las especificaciones del producto y las mejoras que solo "
+                    "otorgan puntaje cuando exista evidencia de ellas."
+                )
+            elif _contract_delivery_question(message):
+                user_prompt = (
+                    f"Pregunta original: {message[:1800]}\n\n"
+                    "Interpretacion para responder: identifica el correo, direccion, mesa de partes o dependencia "
+                    "a la que se remite, envia, presenta, suscribe o perfecciona el contrato. Si aparece un correo "
+                    "que el postor debe consignar para notificaciones, tratalo como un dato distinto y no como "
+                    "destino del contrato."
+                )
+            else:
+                user_prompt = message[:2000]
             cache_label = "cache" if corpus.cache_hit else "download"
             logger.info(
                 "document_ready tender=%s source=%s docs=%s pages=%s chars=%s elapsed_ms=%s",
@@ -310,6 +372,7 @@ REGLAS DE CONTENIDO:
 - No respondas solo "no se encontro informacion especifica" si existe evidencia indirecta que permite orientar al usuario. Da primero la conclusion razonable y luego aclara que no es una confirmacion total si aplica.
 - Conserva literalmente cifras, unidades, porcentajes, plazos y nombres de documentos.
 - Distingue siempre entre: (1) especificaciones tecnicas del bien o servicio, (2) requisitos o documentos obligatorios del postor y su oferta, y (3) factores de evaluacion que otorgan puntaje. No presentes un factor de evaluacion como requisito obligatorio.
+- Distingue entre el correo/direccion para remitir o perfeccionar el contrato y el correo que el postor debe consignar para recibir notificaciones. Si el usuario pregunta a donde dirigir, remitir, enviar, presentar o suscribir el contrato, responde con el destino de remision/perfeccionamiento cuando aparezca en los extractos.
 - Todo criterio expresado mediante puntos, puntaje o metodologia de asignacion es un factor de evaluacion, salvo que el texto indique expresamente que tambien es obligatorio. Presentalo como una mejora valorada, no como un minimo exigido.
 - Los certificados usados para obtener puntaje acreditan un factor de evaluacion; no los llames documentos obligatorios si los extractos no lo establecen expresamente.
 - Clasifica cada dato segun el encabezado y la seccion del documento, no segun las palabras de la pregunta. Todo contenido bajo "FACTORES DE EVALUACION", "PUNTAJE" o "METODOLOGIA PARA SU ASIGNACION" debe aparecer exclusivamente como factor de evaluacion.

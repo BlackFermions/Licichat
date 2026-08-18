@@ -462,7 +462,49 @@ def _tokens(value: str) -> list[str]:
     ]
 
 
-def _expanded_query_tokens(tokens: list[str]) -> list[str]:
+def _has_token_prefix(tokens: list[str], prefixes: tuple[str, ...]) -> bool:
+    return any(token.startswith(prefix) for token in tokens for prefix in prefixes)
+
+
+def _is_contract_delivery_query(tokens: list[str], normalized_question: str) -> bool:
+    if not _has_token_prefix(tokens, ("contrat",)):
+        return False
+    if _has_token_prefix(
+        tokens,
+        (
+            "dirig",
+            "remit",
+            "envi",
+            "manda",
+            "present",
+            "suscrib",
+            "perfeccion",
+            "entreg",
+            "mesa",
+        ),
+    ):
+        return True
+    return any(
+        phrase in normalized_question
+        for phrase in (
+            "a quien",
+            "a que correo",
+            "que correo",
+            "a que direccion",
+            "donde",
+        )
+    ) and not _has_token_prefix(tokens, ("notificacion", "notificar", "consign"))
+
+
+def _is_feedback_or_rejection_query(tokens: list[str]) -> bool:
+    return _has_token_prefix(tokens, ("retroaliment", "feedback", "rechaz", "observ"))
+
+
+def _is_appeal_query(tokens: list[str]) -> bool:
+    return _has_token_prefix(tokens, ("apel", "impugn", "recurso", "reclam"))
+
+
+def _expanded_query_tokens(tokens: list[str], normalized_question: str) -> list[str]:
     expanded: list[str] = []
     if any(token.startswith("especific") for token in tokens):
         expanded.extend(["tecnica", "tecnico", "requisito", "caracteristica", "ficha", "cumplimiento"])
@@ -470,26 +512,108 @@ def _expanded_query_tokens(tokens: list[str]) -> list[str]:
         expanded.extend(["postor", "proveedor", "participante", "oferta"])
     if any(token.startswith("document") for token in tokens):
         expanded.extend(["acreditar", "certificado", "declaracion", "registro", "presentar"])
+    if _is_contract_delivery_query(tokens, normalized_question):
+        expanded.extend([
+            "remitir",
+            "remite",
+            "remision",
+            "enviar",
+            "direccion",
+            "electronica",
+            "electronico",
+            "suscripcion",
+            "suscribir",
+            "perfeccionamiento",
+            "mesa",
+            "partes",
+            "tramite",
+            "documentario",
+            "firma",
+            "digital",
+        ])
+    if _is_feedback_or_rejection_query(tokens):
+        expanded.extend([
+            "rechazar",
+            "rechazada",
+            "rechazadas",
+            "decision",
+            "motivada",
+            "motivo",
+            "sustento",
+            "solicitar",
+            "observaciones",
+            "elementos",
+            "incumplimiento",
+        ])
+    if _is_appeal_query(tokens):
+        expanded.extend([
+            "apelacion",
+            "impugnacion",
+            "recurso",
+            "tribunal",
+            "consentimiento",
+            "consentida",
+            "buena",
+            "pro",
+            "plazo",
+        ])
     return expanded
 
 
-def _intent_token_weights(tokens: list[str]) -> dict[str, float]:
-    if not any(
-        token.startswith(prefix)
-        for token in tokens
-        for prefix in ("convoc", "postor", "proveedor", "particip")
-    ):
-        return {}
-    return {
-        "postor": 2.5,
-        "oferta": 2.5,
-        "presentar": 2.5,
-        "acreditar": 2.0,
-        "obligatorio": 2.0,
-        "requisito": 1.5,
-        "documento": 1.5,
-        "admision": 1.5,
-    }
+def _intent_token_weights(tokens: list[str], normalized_question: str) -> dict[str, float]:
+    weights: dict[str, float] = {}
+    if _has_token_prefix(tokens, ("convoc", "postor", "proveedor", "particip")):
+        weights.update({
+            "postor": 2.5,
+            "oferta": 2.5,
+            "presentar": 2.5,
+            "acreditar": 2.0,
+            "obligatorio": 2.0,
+            "requisito": 1.5,
+            "documento": 1.5,
+            "admision": 1.5,
+        })
+    if _is_contract_delivery_query(tokens, normalized_question):
+        weights.update({
+            "contrato": 2.0,
+            "remitir": 3.0,
+            "remite": 3.0,
+            "remision": 2.5,
+            "enviar": 2.5,
+            "direccion": 2.5,
+            "electronica": 2.0,
+            "electronico": 2.0,
+            "perfeccionamiento": 2.5,
+            "suscripcion": 2.0,
+            "suscribir": 2.0,
+            "mesa": 1.5,
+            "partes": 1.5,
+            "tramite": 1.0,
+            "documentario": 1.0,
+        })
+    if _is_feedback_or_rejection_query(tokens):
+        weights.update({
+            "rechazo": 2.0,
+            "rechazar": 2.0,
+            "rechazada": 2.0,
+            "decision": 2.0,
+            "motivada": 2.5,
+            "sustento": 2.0,
+            "elementos": 1.5,
+            "incumplimiento": 1.5,
+        })
+    if _is_appeal_query(tokens):
+        weights.update({
+            "apelacion": 2.5,
+            "impugnacion": 2.5,
+            "recurso": 2.0,
+            "tribunal": 2.0,
+            "consentimiento": 1.5,
+            "consentida": 1.5,
+            "buena": 1.0,
+            "pro": 1.0,
+        })
+    return weights
 
 
 def _evidence_hint(text: str) -> str:
@@ -513,6 +637,17 @@ def _evidence_hint(text: str) -> str:
         )
     ):
         hints.append("contiene posibles requisitos o documentos de la oferta")
+    if any(
+        phrase in normalized
+        for phrase in (
+            "perfeccionamiento del contrato",
+            "suscripcion del contrato",
+            "remitir a la siguiente direccion",
+            "direccion electronica",
+            "mesa de partes",
+        )
+    ):
+        hints.append("contiene datos de remision o perfeccionamiento del contrato")
     return "; ".join(hints) or "clasificar segun el encabezado y el texto"
 
 
@@ -539,11 +674,11 @@ def _is_near_duplicate(candidate: PageText, selected: list[PageText]) -> bool:
 
 def select_context(corpus: Corpus, question: str, max_pages: int = 6) -> tuple[str, list[dict]]:
     query_counts = Counter(_tokens(question))
-    support_tokens = [
-        token for token in _expanded_query_tokens(list(query_counts)) if token not in query_counts
-    ]
     normalized_question = _normalize(question).strip()
-    intent_weights = _intent_token_weights(list(query_counts))
+    support_tokens = [
+        token for token in _expanded_query_tokens(list(query_counts), normalized_question) if token not in query_counts
+    ]
+    intent_weights = _intent_token_weights(list(query_counts), normalized_question)
     scored: list[tuple[float, float, float, PageText]] = []
 
     for page in corpus.pages:

@@ -135,6 +135,83 @@ class LiteRagSelectionTests(unittest.TestCase):
         self.assertIn({"document": "Bases Integradas", "page": 33}, references)
         self.assertNotIn({"document": "Bases Administrativas", "page": 32}, references)
 
+    def test_prioritizes_contract_delivery_destination(self):
+        corpus = Corpus(
+            tender_id="1",
+            source_digest="digest",
+            pages=[
+                PageText(
+                    "Bases Integradas",
+                    24,
+                    "Para el perfeccionamiento del contrato, el postor ganador debe remitir "
+                    "los documentos a la siguiente direccion electronica: "
+                    "subgerlogistica@municanchis.com.pe. Si no cuenta con firma digital, "
+                    "debe presentarlos en la Mesa de Partes de la Unidad de Tramite Documentario.",
+                ),
+                PageText(
+                    "Bases Integradas",
+                    42,
+                    "El postor debe consignar un correo electronico para recibir notificaciones "
+                    "durante la ejecucion del contrato.",
+                ),
+            ],
+            document_count=1,
+            total_pages=2,
+            total_chars=330,
+        )
+        context, references = select_context(corpus, "A que correo tengo que dirigir el contrato?")
+        self.assertIn("subgerlogistica@municanchis.com.pe", context)
+        self.assertEqual(references[0], {"document": "Bases Integradas", "page": 24})
+
+    def test_contract_delivery_synonyms_select_same_destination(self):
+        corpus = Corpus(
+            tender_id="1",
+            source_digest="digest",
+            pages=[
+                PageText(
+                    "Bases Integradas",
+                    24,
+                    "La suscripcion del contrato se realiza remitiendo la documentacion a la "
+                    "direccion electronica contrataciones@entidad.gob.pe.",
+                ),
+                PageText(
+                    "Bases Integradas",
+                    42,
+                    "El contratista consigna su correo para notificaciones de ejecucion contractual.",
+                ),
+            ],
+            document_count=1,
+            total_pages=2,
+            total_chars=210,
+        )
+        _, references = select_context(corpus, "Y a quien se remite el contrato?")
+        self.assertEqual(references[0], {"document": "Bases Integradas", "page": 24})
+
+    def test_contract_notification_email_remains_distinct(self):
+        corpus = Corpus(
+            tender_id="1",
+            source_digest="digest",
+            pages=[
+                PageText(
+                    "Bases Integradas",
+                    24,
+                    "Para el perfeccionamiento del contrato, los documentos se remiten a mesa de partes.",
+                ),
+                PageText(
+                    "Bases Integradas",
+                    42,
+                    "El postor ganador debe consignar un correo electronico para notificaciones "
+                    "durante la ejecucion del contrato.",
+                ),
+            ],
+            document_count=1,
+            total_pages=2,
+            total_chars=230,
+        )
+        context, references = select_context(corpus, "Que correo debo consignar para notificaciones del contrato?")
+        self.assertIn("notificaciones", context)
+        self.assertEqual(references[0], {"document": "Bases Integradas", "page": 42})
+
 
 if __name__ == "__main__":
     unittest.main()
