@@ -212,6 +212,53 @@ class LiteRagSelectionTests(unittest.TestCase):
         self.assertIn("notificaciones", context)
         self.assertEqual(references[0], {"document": "Bases Integradas", "page": 42})
 
+    def test_nutritional_values_do_not_prioritize_referential_value(self):
+        corpus = Corpus(
+            tender_id="1",
+            source_digest="digest",
+            pages=[
+                PageText(
+                    "Bases Integradas",
+                    4,
+                    "Valor referencial del procedimiento: no aplica.",
+                ),
+                PageText(
+                    "Bases Integradas",
+                    33,
+                    "Factores de evaluacion. Valores nutricionales: proteina de 11.7 g a mas "
+                    "obtiene 5 puntos y energia total de 380 kcal a mas obtiene 5 puntos.",
+                ),
+            ],
+            document_count=1,
+            total_pages=2,
+            total_chars=210,
+        )
+        context, references = select_context(corpus, "Explaya mas los valores nutricionales")
+        self.assertIn("Valores nutricionales", context)
+        self.assertIn("proteina", context)
+        self.assertEqual(references[0], {"document": "Bases Integradas", "page": 33})
+
+    def test_nutritional_query_expands_to_related_technical_terms(self):
+        corpus = Corpus(
+            tender_id="1",
+            source_digest="digest",
+            pages=[
+                PageText("Bases Integradas", 7, "Valor estimado y moneda de la contratacion."),
+                PageText(
+                    "Bases Integradas",
+                    28,
+                    "Ficha tecnica del producto. Proteina minima, grasas, carbohidratos, "
+                    "energia y componentes nacionales acreditables.",
+                ),
+            ],
+            document_count=1,
+            total_pages=2,
+            total_chars=180,
+        )
+        context, references = select_context(corpus, "Explica el aspecto nutricional")
+        self.assertIn("Proteina", context)
+        self.assertEqual(references[0], {"document": "Bases Integradas", "page": 28})
+
 
 if __name__ == "__main__":
     unittest.main()

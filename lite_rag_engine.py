@@ -504,6 +504,33 @@ def _is_appeal_query(tokens: list[str]) -> bool:
     return _has_token_prefix(tokens, ("apel", "impugn", "recurso", "reclam"))
 
 
+def _is_nutrition_or_technical_value_query(tokens: list[str], normalized_question: str) -> bool:
+    if "valor referencial" in normalized_question or "valor estimado" in normalized_question:
+        return False
+    return _has_token_prefix(
+        tokens,
+        (
+            "nutric",
+            "protein",
+            "grasa",
+            "carbohidrat",
+            "calori",
+            "energia",
+            "energet",
+            "component",
+        ),
+    ) or any(
+        phrase in normalized_question
+        for phrase in (
+            "valor nutricional",
+            "valores nutricionales",
+            "ficha tecnica",
+            "componentes nacionales",
+            "componente nacional",
+        )
+    )
+
+
 def _expanded_query_tokens(tokens: list[str], normalized_question: str) -> list[str]:
     expanded: list[str] = []
     if any(token.startswith("especific") for token in tokens):
@@ -556,6 +583,30 @@ def _expanded_query_tokens(tokens: list[str], normalized_question: str) -> list[
             "buena",
             "pro",
             "plazo",
+        ])
+    if _is_nutrition_or_technical_value_query(tokens, normalized_question):
+        expanded.extend([
+            "nutricional",
+            "nutricionales",
+            "proteina",
+            "proteico",
+            "grasas",
+            "carbohidratos",
+            "calorias",
+            "energia",
+            "energetico",
+            "componentes",
+            "nacionales",
+            "componente",
+            "nacional",
+            "ficha",
+            "tecnica",
+            "especificaciones",
+            "factor",
+            "factores",
+            "evaluacion",
+            "puntaje",
+            "puntos",
         ])
     return expanded
 
@@ -613,6 +664,30 @@ def _intent_token_weights(tokens: list[str], normalized_question: str) -> dict[s
             "buena": 1.0,
             "pro": 1.0,
         })
+    if _is_nutrition_or_technical_value_query(tokens, normalized_question):
+        weights.update({
+            "nutricional": 3.0,
+            "nutricionales": 3.0,
+            "proteina": 2.5,
+            "proteico": 2.0,
+            "grasas": 2.0,
+            "grasa": 2.0,
+            "carbohidratos": 2.0,
+            "calorias": 2.0,
+            "energia": 2.0,
+            "energetico": 1.8,
+            "componentes": 1.7,
+            "nacionales": 1.7,
+            "componente": 1.7,
+            "nacional": 1.7,
+            "ficha": 1.5,
+            "tecnica": 1.5,
+            "factor": 1.5,
+            "factores": 1.5,
+            "evaluacion": 1.5,
+            "puntaje": 1.5,
+            "puntos": 1.2,
+        })
     return weights
 
 
@@ -648,6 +723,22 @@ def _evidence_hint(text: str) -> str:
         )
     ):
         hints.append("contiene datos de remision o perfeccionamiento del contrato")
+    if any(
+        phrase in normalized
+        for phrase in (
+            "valor nutricional",
+            "valores nutricionales",
+            "proteina",
+            "grasas",
+            "carbohidratos",
+            "calorias",
+            "energia",
+            "ficha tecnica",
+            "componente nacional",
+            "componentes nacionales",
+        )
+    ):
+        hints.append("contiene posibles valores nutricionales o criterios tecnicos")
     return "; ".join(hints) or "clasificar segun el encabezado y el texto"
 
 

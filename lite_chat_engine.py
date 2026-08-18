@@ -127,6 +127,34 @@ def _contract_delivery_question(message: str) -> bool:
     return explicit_delivery or not notification_only
 
 
+def _nutrition_or_technical_value_question(message: str) -> bool:
+    normalized = _normalize_message(message)
+    if "valor referencial" in normalized or "valor estimado" in normalized:
+        return False
+    return any(
+        marker in normalized
+        for marker in (
+            "valor nutricional",
+            "valores nutricionales",
+            "nutricional",
+            "nutricionales",
+            "proteina",
+            "proteinas",
+            "grasa",
+            "grasas",
+            "carbohidrato",
+            "carbohidratos",
+            "caloria",
+            "calorias",
+            "energia",
+            "energetico",
+            "energetica",
+            "componente nacional",
+            "componentes nacionales",
+        )
+    )
+
+
 def _wants_detailed_answer(message: str) -> bool:
     return _message_has_any(
         message,
@@ -181,6 +209,15 @@ def _build_question_guidance(message: str, supplier_question: bool, wants_detail
             "salvo que el usuario pregunte especificamente por notificaciones."
         )
 
+    if _nutrition_or_technical_value_question(message):
+        guidance.append(
+            "La consulta trata sobre valores nutricionales o caracteristicas tecnicas del bien. "
+            "No lo interpretes como valor referencial, monto, precio ni presupuesto. Busca evidencia "
+            "en ficha tecnica, especificaciones tecnicas y factores de evaluacion. Si aparece con puntos "
+            "o puntaje, explicalo como factor que otorga puntaje; si aparece como cumplimiento minimo, "
+            "explicalo como requisito. No inventes cantidades ni rangos que no esten en los extractos."
+        )
+
     if _message_has_any(message, ("significa", "quiere decir", "en la practica", "puedo", "deberia", "conviene")):
         guidance.append(
             "La consulta requiere interpretacion practica. Puedes inferir consecuencias razonables desde "
@@ -206,7 +243,7 @@ def health():
         {
             "status": "ok",
             "service": "licigob-ai-lite",
-            "version": "1.0.2",
+            "version": "1.0.3",
             "model": CHAT_MODEL,
             "mode": "pdf-text-on-demand",
         }
@@ -349,6 +386,14 @@ def chat_stream():
                     "que el postor debe consignar para notificaciones, tratalo como un dato distinto y no como "
                     "destino del contrato."
                 )
+            elif _nutrition_or_technical_value_question(message):
+                user_prompt = (
+                    f"Pregunta original: {message[:1800]}\n\n"
+                    "Interpretacion para responder: explica los valores nutricionales o caracteristicas tecnicas "
+                    "que aparecen en los extractos. Distingue si son requisitos obligatorios, especificaciones "
+                    "tecnicas o factores de evaluacion con puntaje. No respondas con valor referencial, monto, "
+                    "precio ni presupuesto."
+                )
             else:
                 user_prompt = message[:2000]
             cache_label = "cache" if corpus.cache_hit else "download"
@@ -372,6 +417,7 @@ REGLAS DE CONTENIDO:
 - No respondas solo "no se encontro informacion especifica" si existe evidencia indirecta que permite orientar al usuario. Da primero la conclusion razonable y luego aclara que no es una confirmacion total si aplica.
 - Conserva literalmente cifras, unidades, porcentajes, plazos y nombres de documentos.
 - Distingue siempre entre: (1) especificaciones tecnicas del bien o servicio, (2) requisitos o documentos obligatorios del postor y su oferta, y (3) factores de evaluacion que otorgan puntaje. No presentes un factor de evaluacion como requisito obligatorio.
+- Si el usuario pregunta por "valor nutricional" o "valores nutricionales", entiende "valor" como caracteristica tecnica del bien, no como valor referencial o monto de la licitacion.
 - Distingue entre el correo/direccion para remitir o perfeccionar el contrato y el correo que el postor debe consignar para recibir notificaciones. Si el usuario pregunta a donde dirigir, remitir, enviar, presentar o suscribir el contrato, responde con el destino de remision/perfeccionamiento cuando aparezca en los extractos.
 - Todo criterio expresado mediante puntos, puntaje o metodologia de asignacion es un factor de evaluacion, salvo que el texto indique expresamente que tambien es obligatorio. Presentalo como una mejora valorada, no como un minimo exigido.
 - Los certificados usados para obtener puntaje acreditan un factor de evaluacion; no los llames documentos obligatorios si los extractos no lo establecen expresamente.
