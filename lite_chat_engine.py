@@ -206,7 +206,7 @@ def health():
         {
             "status": "ok",
             "service": "licigob-ai-lite",
-            "version": "1.0.1",
+            "version": "1.0.2",
             "model": CHAT_MODEL,
             "mode": "pdf-text-on-demand",
         }
