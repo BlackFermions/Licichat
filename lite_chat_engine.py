@@ -95,6 +95,20 @@ def _message_has_any(message: str, markers: tuple[str, ...]) -> bool:
     return any(marker in normalized for marker in markers)
 
 
+def _document_preparation_request(message: str) -> bool:
+    return _message_has_any(
+        message,
+        (
+            "analiza las bases",
+            "analizar las bases",
+            "carga las bases",
+            "cargar las bases",
+            "prepara las bases",
+            "si carga las bases",
+        ),
+    )
+
+
 def _contract_delivery_question(message: str) -> bool:
     normalized = _normalize_message(message)
     if "contrat" not in normalized:
@@ -254,7 +268,7 @@ def health():
         {
             "status": "ok",
             "service": "licigob-ai-lite",
-            "version": "1.0.4",
+            "version": "1.0.5",
             "model": CHAT_MODEL,
             "mode": "pdf-text-on-demand",
             "recommendations": RECOMMENDATIONS_AVAILABLE,
@@ -481,6 +495,19 @@ def chat_stream():
         try:
             yield "[STATUS]Preparando documentos PDF...\n"
             tender, corpus = prepare_corpus(tender_id)
+            if _document_preparation_request(message):
+                logger.info(
+                    "document_prepared_only tender=%s docs=%s pages=%s chars=%s elapsed_ms=%s",
+                    tender_id,
+                    corpus.document_count,
+                    corpus.total_pages,
+                    corpus.total_chars,
+                    round((time.monotonic() - started) * 1000),
+                )
+                yield "[STATUS]Documentos listos.\n"
+                yield "Bases analizadas. Que deseas saber?"
+                return
+
             context, references = select_context(corpus, message)
             normalized_message = message.lower()
             supplier_question = any(
