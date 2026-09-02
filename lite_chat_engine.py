@@ -24,6 +24,17 @@ from lite_rag_engine import (
     tender_summary,
 )
 
+try:
+    import match_engine_pgvector as recommendation_engine
+    RECOMMENDATIONS_AVAILABLE = True
+except Exception as exc:
+    recommendation_engine = None
+    RECOMMENDATIONS_AVAILABLE = False
+    logging.getLogger("licigob-ai-lite").warning(
+        "recommendation_engine_unavailable: %s",
+        exc,
+    )
+
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("licigob-ai-lite")
@@ -243,9 +254,10 @@ def health():
         {
             "status": "ok",
             "service": "licigob-ai-lite",
-            "version": "1.0.3",
+            "version": "1.0.4",
             "model": CHAT_MODEL,
             "mode": "pdf-text-on-demand",
+            "recommendations": RECOMMENDATIONS_AVAILABLE,
         }
     )
 
@@ -344,6 +356,112 @@ def edge_ingest():
                 os.unlink(path)
             except FileNotFoundError:
                 pass
+
+
+def _extract_recommendation_user_id(data: dict) -> str:
+    value = data.get("user_id") or data.get("userId") or data.get("id")
+    return str(value or "").strip()
+
+
+def _bounded_top_k(value) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = 10
+    return max(1, min(parsed, 20))
+
+
+def _safe_float(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+@app.post("/api/v1/recommendations")
+def recommendations():
+    if not _authorized():
+        return jsonify({"status": "error", "code": "unauthorized"}), 401
+
+    if not RECOMMENDATIONS_AVAILABLE or recommendation_engine is None:
+        return jsonify(
+            {
+                "status": "error",
+                "code": "RECOMMENDATION_ENGINE_UNAVAILABLE",
+                "message": "El motor de recomendaciones no esta disponible.",
+                "recommendations": [],
+            }
+        ), 503
+
+    data = request.get_json(silent=True) or {}
+    user_id = _extract_recommendation_user_id(data)
+    if not user_id:
+        return jsonify(
+            {
+                "status": "error",
+                "code": "MISSING_USER_ID",
+                "message": "No se encontro el usuario para generar recomendaciones.",
+                "recommendations": [],
+            }
+        ), 400
+
+    try:
+        top_k = _bounded_top_k(data.get("top_k", 10))
+        result = recommendation_engine.recomendar(user_id=int(user_id), top_k=top_k)
+        if result.get("error"):
+            logger.warning("recommendation_engine_error user=%s error=%s", user_id, result["error"])
+            status_code = 400 if "perfil" in str(result["error"]).lower() else 503
+            return jsonify(
+                {
+                    "status": "error",
+                    "code": "RECOMMENDATION_ENGINE_ERROR",
+                    "message": "No pudimos generar recomendaciones en este momento.",
+                    "recommendations": [],
+                }
+            ), status_code
+
+        recommendations = []
+        for lic in result.get("licitaciones") or []:
+            recommendations.append(
+                {
+                    "id_proceso": lic.get("tender_id"),
+                    "objeto_contractual": lic.get("objeto_contractual"),
+                    "entidad_convocante": lic.get("entidad_convocante"),
+                    "region_ejecucion": lic.get("region_ejecucion"),
+                    "monto_referencial": _safe_float(lic.get("monto_referencial")),
+                    "affinity_score": lic.get("affinity_score"),
+                    "tipo_contrato_clasificado": str(lic.get("categoria") or "").capitalize(),
+                    "metodo": lic.get("metodo"),
+                    "fecha_publicacion": str(lic.get("fecha_publicacion") or ""),
+                    "recommendation_scope": lic.get("recommendation_scope", "recent"),
+                }
+            )
+
+        recommendation_scope = (
+            recommendations[0].get("recommendation_scope")
+            if recommendations
+            else "none"
+        )
+        return jsonify(
+            {
+                "status": "success",
+                "recommendations": recommendations,
+                "total": len(recommendations),
+                "user_id": user_id,
+                "company_name": result.get("company_name"),
+                "recommendation_scope": recommendation_scope,
+            }
+        )
+    except Exception:
+        logger.exception("recommendations_failed user=%s", user_id)
+        return jsonify(
+            {
+                "status": "error",
+                "code": "RECOMMENDATION_INTERNAL_ERROR",
+                "message": "No pudimos generar recomendaciones en este momento.",
+                "recommendations": [],
+            }
+        ), 500
 
 
 @app.post("/api/v1/chat_stream")
