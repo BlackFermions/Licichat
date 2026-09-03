@@ -173,6 +173,7 @@ SQL_BASE = """
 SELECT
     le.tender_id,
     t.title                         AS objeto_contractual,
+    t.description                   AS descripcion_licitacion,
     t.main_procurement_category     AS categoria,
     t.procurement_method_details    AS metodo,
     t.value_amount                  AS monto_referencial,
@@ -382,6 +383,7 @@ def buscar_licitaciones(query: str,
             resultados.append({
                 "tender_id":          row["tender_id"],
                 "objeto_contractual": row["objeto_contractual"],
+                "descripcion_licitacion": row["descripcion_licitacion"],
                 "entidad_convocante": row["entidad_convocante"],
                 "region_ejecucion":   row["region_ejecucion"] or row["departamento"],
                 "monto_referencial":  float(row["monto_referencial"] or 0),

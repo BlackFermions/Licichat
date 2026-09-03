@@ -268,7 +268,7 @@ def health():
         {
             "status": "ok",
             "service": "licigob-ai-lite",
-            "version": "1.0.5",
+            "version": "1.0.6",
             "model": CHAT_MODEL,
             "mode": "pdf-text-on-demand",
             "recommendations": RECOMMENDATIONS_AVAILABLE,
@@ -440,6 +440,7 @@ def recommendations():
                 {
                     "id_proceso": lic.get("tender_id"),
                     "objeto_contractual": lic.get("objeto_contractual"),
+                    "descripcion_licitacion": lic.get("descripcion_licitacion"),
                     "entidad_convocante": lic.get("entidad_convocante"),
                     "region_ejecucion": lic.get("region_ejecucion"),
                     "monto_referencial": _safe_float(lic.get("monto_referencial")),
