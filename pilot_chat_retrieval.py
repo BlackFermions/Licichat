@@ -48,11 +48,6 @@ def coverage_message(status):
             "Lectura parcial: algunas paginas no pudieron analizarse. "
             "La respuesta se basa solo en los fragmentos disponibles."
         )
-    if status.get("container_documents"):
-        warnings.append(
-            "Hay documentos extraidos de archivos comprimidos o Word; "
-            "sus paginas son referencias internas y pueden no coincidir con el archivo original."
-        )
     return " ".join(warnings)
 
 

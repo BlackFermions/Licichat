@@ -15,7 +15,7 @@ class PilotRetrievalTests(unittest.TestCase):
         with patch.object(pilot, "enabled", return_value=True), patch.object(pilot, "_connection", side_effect=RuntimeError):
             self.assertIsNone(pilot.pilot_status("1241981"))
 
-    def test_status_partial_and_container_warning(self):
+    def test_status_only_reports_partial_coverage(self):
         conn = MagicMock()
         cursor = conn.cursor.return_value.__enter__.return_value
         cursor.fetchall.return_value = [{"page_count": 10, "text_char_count": 900,
@@ -25,7 +25,7 @@ class PilotRetrievalTests(unittest.TestCase):
             status = pilot.pilot_status("1241981")
         self.assertTrue(status["partial"])
         self.assertIn("Lectura parcial", status["warning"])
-        self.assertIn("referencias internas", status["warning"])
+        self.assertNotIn("referencias internas", status["warning"])
         self.assertEqual(cursor.execute.call_args.args[1], ("1241981", "pilot-v1"))
         conn.close.assert_called_once()
 
