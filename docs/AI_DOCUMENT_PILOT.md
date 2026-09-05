@@ -74,7 +74,8 @@ Recursos del piloto desplegados:
 
 No se necesita otro PostgreSQL, Redis, API, frontend ni MinIO en produccion.
 
-SEACE bloquea de forma intermitente las salidas de centros de datos. Por eso el
+Durante las pruebas algunas descargas desde Azure fallaron, mientras que el
+staging local pudo descargarlas; no se ha confirmado la causa en SEACE. El
 Job no reclama un trabajo hasta que todos sus originales hayan sido guardados
 en Blob. El staging es liviano: descarga y transmite archivos de uno en uno; no
 ejecuta OCR, embeddings ni mantiene los documentos en memoria.
@@ -225,3 +226,8 @@ fallidos ni crea una programacion permanente.
 - Se registra tiempo, paginas OCR, bytes, tokens y errores por etapa.
 - La importacion diaria no espera descargas, OCR ni OpenAI.
 - El chatbot actual sigue funcionando si el piloto esta apagado.
+
+## Resultado inicial
+
+Ver [informe del lote de 50](PILOT_RUN_2026-09-04.md) para resultados medidos,
+errores explicados, cobertura parcial y pendientes de integracion.
