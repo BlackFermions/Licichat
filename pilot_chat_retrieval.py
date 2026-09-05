@@ -15,6 +15,17 @@ PIPELINE_VERSION = "pilot-v1"
 AWARD_MARKERS = (
     "buena pro", "otorgamiento", "acta de apertura", "acta de evaluacion",
     "documento de adjudicacion", "resultado del procedimiento", "procedimiento desierto",
+    "ganador", "ganadores", "quien gano", "adjudicado", "adjudicacion",
+)
+OBJECTIVE_MARKERS = (
+    "objetivo", "objeto de la licitacion", "objeto de la contratacion",
+    "objeto de la convocatoria", "de que trata", "que compra la entidad",
+    "que contrata la entidad", "que necesita la entidad", "que requiere la entidad",
+    "que pide la entidad", "que pide el gobierno", "que se pide en la licitacion",
+    "que se pide de la licitacion", "que se pide para la licitacion",
+)
+SUPPLIER_MARKERS = (
+    "convocad", "concursant", "postor", "proveedor", "participante", "postulante", "ofertante",
 )
 
 
@@ -49,6 +60,12 @@ def award_document_question(question):
     normalized = unicodedata.normalize("NFKD", str(question or "").lower())
     normalized = "".join(char for char in normalized if not unicodedata.combining(char))
     return any(marker in normalized for marker in AWARD_MARKERS)
+
+
+def _question_has_any(question, markers):
+    normalized = unicodedata.normalize("NFKD", str(question or "").lower())
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    return any(marker in normalized for marker in markers)
 
 
 # Only a completed job with current source URLs can advertise prepared material.
@@ -137,7 +154,14 @@ def retrieve_pilot(tender_id, question, client, history=None):
         previous = [str(item.get("content", ""))[:400] for item in (history or [])[-4:]
                     if isinstance(item, dict) and item.get("role") == "user"]
         query = question[:2000]
-        if len(query.split()) < 10 and previous:
+        objective_question = _question_has_any(question, OBJECTIVE_MARKERS)
+        supplier_question = _question_has_any(question, SUPPLIER_MARKERS)
+        award_question = award_document_question(question)
+        if objective_question:
+            query = f"objeto de la convocatoria finalidad descripcion del bien servicio u obra {query}"
+        elif supplier_question:
+            query = f"requisitos del postor documentos para admision y presentacion de la oferta {query}"
+        elif len(query.split()) < 10 and previous and not award_question:
             query = f"Consulta anterior: {previous[-1]}\nPregunta actual: {query}"
         embedding = client.with_options(timeout=20.0, max_retries=0).embeddings.create(
             model=os.getenv("PILOT_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"),
@@ -147,7 +171,11 @@ def retrieve_pilot(tender_id, question, client, history=None):
             raise ValueError("invalid_embedding")
         vector = "[" + ",".join(str(float(v)) for v in embedding) + "]"
         conn = _connection()
-        role_filter = "AND a.document_role = 'buena_pro'" if award_document_question(question) else ""
+        role_filter = (
+            "AND a.document_role = 'buena_pro'"
+            if award_question
+            else "AND a.document_role = 'bases'"
+        )
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             # Materialize the tender subset before nearest-neighbour ranking. This
             # avoids filtering a global approximate index down to too few matches.

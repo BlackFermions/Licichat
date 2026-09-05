@@ -75,3 +75,20 @@ class PilotChatRouteTests(unittest.TestCase):
         )
         self.assertIn("no prueba que exista un ganador", guidance)
         self.assertIn("declarado desierto", guidance)
+
+    def test_objective_question_is_not_treated_as_supplier_requirements(self):
+        self.assertTrue(chat._procurement_objective_question("Cual es el objetivo de la licitacion?"))
+        self.assertFalse(chat._supplier_requirements_question("Cual es el objetivo de la licitacion?"))
+        guidance = chat._build_question_guidance(
+            "Que se pide en la licitacion?", False, False
+        )
+        self.assertIn("objeto de la contratacion", guidance)
+        self.assertIn("No sustituyas", guidance)
+
+    def test_mixed_question_separates_objective_and_bidder_requirements(self):
+        message = "Que se pide de la licitacion o que pedian a los concursantes?"
+        self.assertTrue(chat._procurement_objective_question(message))
+        self.assertTrue(chat._supplier_requirements_question(message))
+        guidance = chat._build_question_guidance(message, True, False)
+        self.assertIn("Objeto de la contratacion", guidance)
+        self.assertIn("Requisitos para los postores", guidance)

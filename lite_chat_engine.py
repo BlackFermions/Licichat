@@ -127,6 +127,29 @@ def _award_document_question(message: str) -> bool:
     )
 
 
+def _supplier_requirements_question(message: str) -> bool:
+    return _message_has_any(
+        message,
+        (
+            "convocad", "concursant", "postor", "proveedor", "participante",
+            "postulante", "ofertante",
+        ),
+    )
+
+
+def _procurement_objective_question(message: str) -> bool:
+    return _message_has_any(
+        message,
+        (
+            "objetivo", "objeto de la licitacion", "objeto de la contratacion",
+            "objeto de la convocatoria", "de que trata", "que compra la entidad",
+            "que contrata la entidad", "que necesita la entidad", "que requiere la entidad",
+            "que pide la entidad", "que pide el gobierno", "que se pide en la licitacion",
+            "que se pide de la licitacion", "que se pide para la licitacion",
+        ),
+    )
+
+
 def _contract_delivery_question(message: str) -> bool:
     normalized = _normalize_message(message)
     if "contrat" not in normalized:
@@ -219,6 +242,7 @@ def _wants_detailed_answer(message: str) -> bool:
 
 def _build_question_guidance(message: str, supplier_question: bool, wants_detail: bool) -> str:
     guidance: list[str] = []
+    objective_question = _procurement_objective_question(message)
 
     if _award_document_question(message):
         guidance.append(
@@ -229,7 +253,20 @@ def _build_question_guidance(message: str, supplier_question: bool, wants_detail
             "y resume el resultado que contiene."
         )
 
-    if supplier_question:
+    if objective_question and supplier_question:
+        guidance.append(
+            "La consulta mezcla dos alcances. Responde primero, bajo 'Objeto de la contratacion', que bien, "
+            "servicio u obra necesita la entidad. Luego, bajo 'Requisitos para los postores', resume lo que "
+            "los concursantes deben presentar o acreditar. No confundas el objeto comprado con los anexos "
+            "administrativos exigidos para participar."
+        )
+    elif objective_question:
+        guidance.append(
+            "La consulta pide el objetivo u objeto de la contratacion. Responde que bien, servicio u obra "
+            "requiere la entidad y para que finalidad, si esta indicada. No sustituyas esa respuesta por "
+            "documentos, anexos o requisitos de participacion."
+        )
+    elif supplier_question:
         guidance.append(
             "La consulta pregunta por lo exigido al postor o proveedor. Empieza por requisitos "
             "y documentos que debe presentar o acreditar. Separa cualquier mejora con puntaje "
@@ -571,14 +608,25 @@ def chat_stream():
 
             if not pilot:
                 context, references = select_context(corpus, message)
-            normalized_message = message.lower()
-            supplier_question = any(
-                marker in normalized_message
-                for marker in ("convoc", "postor", "proveedor", "participante")
-            )
+            supplier_question = _supplier_requirements_question(message)
+            objective_question = _procurement_objective_question(message)
             wants_detail = _wants_detailed_answer(message)
             question_guidance = _build_question_guidance(message, supplier_question, wants_detail)
-            if supplier_question:
+            if objective_question and supplier_question:
+                user_prompt = (
+                    f"Pregunta original: {message[:1800]}\n\n"
+                    "Interpretacion para responder: la pregunta combina el objeto de la contratacion con lo "
+                    "exigido a los concursantes. Explica ambos por separado y empieza por lo que la entidad "
+                    "busca comprar, contratar o ejecutar."
+                )
+            elif objective_question:
+                user_prompt = (
+                    f"Pregunta original: {message[:1800]}\n\n"
+                    "Interpretacion para responder: identifica primero el objeto concreto de la convocatoria, "
+                    "es decir, que compra, contrata o necesita la entidad. Incluye su finalidad cuando figure "
+                    "en la licitacion y no respondas con requisitos administrativos del postor."
+                )
+            elif supplier_question:
                 user_prompt = (
                     f"Pregunta original: {message[:1800]}\n\n"
                     "Interpretacion para responder: resume lo que se exige al postor para participar o presentar "
@@ -633,6 +681,9 @@ REGLAS DE CONTENIDO:
 - Nunca describas como esencial, minimo u obligatorio un valor seguido de puntos. Por ejemplo, "de 11.7 g a mas: 5 puntos" es una mejora que obtiene puntaje, no un requisito minimo.
 - Si un valor tecnico aparece solamente en un extracto marcado como factor de evaluacion o puntaje, no crees una seccion de especificaciones tecnicas con ese valor ni digas que debe cumplirse. Muestralo solo como mejora puntuable.
 - Interpreta "convocados", "participantes" o "proveedores" como posibles postores. Si preguntan que se les pide, prioriza los requisitos y documentos que deben presentar o acreditar; no limites la respuesta a las especificaciones tecnicas del producto.
+- Interpreta tambien "concursantes", "postulantes" y "ofertantes" como posibles postores.
+- Si preguntan "que se pide en/de la licitacion", "de que trata" u "objetivo" sin mencionar a un postor, responde primero el objeto de la contratacion: que bien, servicio u obra requiere la entidad y su finalidad.
+- Si una pregunta menciona tanto el objetivo de la licitacion como lo pedido a postores o concursantes, responde ambos alcances por separado y empieza por el objeto de la contratacion.
 - Si la pregunta es ambigua, organiza la respuesta en esas categorias y muestra solamente las que tengan evidencia.
 - Si falta informacion directa, dilo claramente, pero despues de dar cualquier orientacion razonable basada en evidencia relacionada.
 - Omite incisos o frases cuyo contenido este cortado en el extracto; no completes su significado.

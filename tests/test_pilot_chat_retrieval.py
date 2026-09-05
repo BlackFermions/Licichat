@@ -70,6 +70,23 @@ class PilotRetrievalTests(unittest.TestCase):
         self.assertIn("a.document_role = 'buena_pro'", cursor.execute.call_args.args[0])
         self.assertEqual(result[2][0]["document"], "Otorgamiento de Buena Pro")
 
+    def test_non_award_question_only_ranks_bases(self):
+        cursor = MagicMock()
+        cursor.fetchall.return_value = [{"source_title": "Bases", "page_start": 2,
+                                         "page_end": 2, "content": "Objeto de la convocatoria"}]
+        connection = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        client = MagicMock()
+        client.with_options.return_value.embeddings.create.return_value.data = [
+            MagicMock(embedding=[0.0] * 1536)
+        ]
+        with patch.object(pilot, "pilot_status", return_value={"ready": True}), \
+             patch.object(pilot, "_connection", return_value=connection):
+            result = pilot.retrieve_pilot("1", "Cual es el objetivo?", client)
+        self.assertIsNotNone(result)
+        self.assertIn("a.document_role = 'bases'", cursor.execute.call_args.args[0])
+        self.assertEqual(result[2][0]["document"], "Bases")
+
     def test_invalid_vector_falls_back(self):
         client = MagicMock()
         client.with_options.return_value.embeddings.create.return_value.data[0].embedding = [float("nan")] * 1536
