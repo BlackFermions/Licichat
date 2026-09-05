@@ -9,6 +9,7 @@ import os
 import tempfile
 import time
 import unicodedata
+from types import SimpleNamespace
 
 import httpx
 from flask import Flask, Response, jsonify, request
@@ -22,7 +23,9 @@ from lite_rag_engine import (
     prepare_corpus,
     select_context,
     tender_summary,
+    get_tender_bundle,
 )
+from pilot_chat_retrieval import pilot_status, retrieve_pilot
 
 try:
     import match_engine_pgvector as recommendation_engine
@@ -268,7 +271,7 @@ def health():
         {
             "status": "ok",
             "service": "licigob-ai-lite",
-            "version": "1.0.6",
+            "version": "1.0.7",
             "model": CHAT_MODEL,
             "mode": "pdf-text-on-demand",
             "recommendations": RECOMMENDATIONS_AVAILABLE,
@@ -301,6 +304,17 @@ def inspect_document():
         )
     except LiteRagError as exc:
         return jsonify({"status": "error", "code": exc.code, "message": str(exc)}), 422
+
+
+@app.post("/api/v1/pilot-status")
+def prepared_pilot_status():
+    if not _authorized():
+        return jsonify({"status": "error", "code": "unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    tender_id = _extract_tender_id(data)
+    if not tender_id or len(tender_id) > 80:
+        return jsonify({"status": "error", "code": "invalid_request"}), 400
+    return jsonify(pilot_status(tender_id) or {"ready": False})
 
 
 @app.post("/api/v1/edge-status")
@@ -494,8 +508,30 @@ def chat_stream():
     def generate():
         started = time.monotonic()
         try:
-            yield "[STATUS]Preparando documentos PDF...\n"
-            tender, corpus = prepare_corpus(tender_id)
+            pilot = None
+            coverage_warning = ""
+            if data.get("use_document_pilot") is True:
+                yield "[STATUS]Consultando documentos preparados...\n"
+                if _document_preparation_request(message):
+                    status = pilot_status(tender_id)
+                    if status:
+                        yield "[STATUS]Documentos listos.\n"
+                        yield "Bases disponibles. Que deseas saber?"
+                        if status["warning"]:
+                            yield "\n\n" + status["warning"]
+                        return
+                else:
+                    pilot = retrieve_pilot(tender_id, message, openai_client, history)
+            if pilot:
+                status, context, references = pilot
+                tender, _ = get_tender_bundle(tender_id)
+                corpus = SimpleNamespace(document_count=status["documents"],
+                                         total_pages=status["pages"],
+                                         total_chars=status["characters"], cache_hit=True)
+                coverage_warning = status["warning"]
+            else:
+                yield "[STATUS]Preparando documentos PDF...\n"
+                tender, corpus = prepare_corpus(tender_id)
             if _document_preparation_request(message):
                 logger.info(
                     "document_prepared_only tender=%s docs=%s pages=%s chars=%s elapsed_ms=%s",
@@ -509,7 +545,8 @@ def chat_stream():
                 yield "Bases analizadas. Que deseas saber?"
                 return
 
-            context, references = select_context(corpus, message)
+            if not pilot:
+                context, references = select_context(corpus, message)
             normalized_message = message.lower()
             supplier_question = any(
                 marker in normalized_message
@@ -542,7 +579,7 @@ def chat_stream():
                 )
             else:
                 user_prompt = message[:2000]
-            cache_label = "cache" if corpus.cache_hit else "download"
+            cache_label = "document_pilot" if pilot else ("cache" if corpus.cache_hit else "download")
             logger.info(
                 "document_ready tender=%s source=%s docs=%s pages=%s chars=%s elapsed_ms=%s",
                 tender_id,
@@ -592,6 +629,10 @@ LICITACION:
 EXTRACTOS SELECCIONADOS:
 {context}
 
+COBERTURA DOCUMENTAL:
+{coverage_warning or 'Solo se proporcionan fragmentos seleccionados, no el documento entero.'}
+No afirmes que un requisito no existe en las bases solo porque no aparece en estos fragmentos.
+
 REFERENCIAS PERMITIDAS:
 {json.dumps(references, ensure_ascii=False)}
 
@@ -619,6 +660,8 @@ CONTROL FINAL ANTES DE RESPONDER:
                 stream=True,
                 temperature=0.15,
             )
+            if coverage_warning:
+                yield coverage_warning + "\n\n"
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content

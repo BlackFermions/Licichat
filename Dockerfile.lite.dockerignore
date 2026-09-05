@@ -1,0 +1,8 @@
+**
+!Dockerfile.lite
+!requirements-lite.txt
+!document_fetcher.py
+!lite_rag_engine.py
+!lite_chat_engine.py
+!pilot_chat_retrieval.py
+!match_engine_pgvector.py

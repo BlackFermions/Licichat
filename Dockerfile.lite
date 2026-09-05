@@ -9,7 +9,7 @@ RUN apt-get update \
 COPY requirements-lite.txt .
 RUN pip install --no-cache-dir -r requirements-lite.txt
 
-COPY document_fetcher.py lite_rag_engine.py lite_chat_engine.py match_engine_pgvector.py ./
+COPY document_fetcher.py lite_rag_engine.py lite_chat_engine.py match_engine_pgvector.py pilot_chat_retrieval.py ./
 
 EXPOSE 5008
 

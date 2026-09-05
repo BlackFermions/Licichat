@@ -48,8 +48,8 @@ licigob-ai-ingestion-job
                            v
                     Prueba de recuperacion semantica
                            |
-                           v (integracion pendiente)
-                    licigob-ai-lite
+                           v
+                    licigob-ai-lite: chatbot del buscador
 ```
 
 MinIO seguira siendo una implementacion valida para desarrollo local. En Azure,
@@ -231,3 +231,9 @@ fallidos ni crea una programacion permanente.
 
 Ver [informe del lote de 50](PILOT_RUN_2026-09-04.md) para resultados medidos,
 errores explicados, cobertura parcial y pendientes de integracion.
+
+El 5 de septiembre se integro la consulta de los documentos listos en el
+chatbot del popup del buscador, con activacion explicita y respaldo al flujo
+anterior. Ver [IDs y pruebas del chatbot](CHATBOT_PILOT_TEST_IDS.md).
+La automatizacion del importador, las recomendaciones y el buscador semantico
+publico siguen fuera de esta primera integracion.
