@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import requests
+
 from document_fetcher import DocumentDownloadError, download_document, normalize_document_url
 
 
@@ -66,6 +68,48 @@ class DocumentFetcherTests(unittest.TestCase):
                 self.assertEqual(handle.read(5), b"%PDF-")
             self.assertEqual(post.call_args.kwargs["json"], {"url": SAMPLE_URL})
             self.assertEqual(post.call_args.kwargs["headers"]["X-Proxy-Key"], "test-key")
+
+    def test_uses_authenticated_proxy_when_direct_connection_fails(self):
+        proxied = FakeResponse(
+            200,
+            "https://licigob-proxy.example.workers.dev/",
+            b"%PDF-1.7\nfixture",
+            {"Content-Length": "16"},
+        )
+        with (
+            patch("document_fetcher.SEACE_DOCUMENT_PROXY_URL", proxied.url),
+            patch("document_fetcher.SEACE_DOCUMENT_PROXY_KEY", "test-key"),
+            patch(
+                "requests.Session.get",
+                side_effect=requests.ConnectionError("temporary upstream failure"),
+            ),
+            patch("requests.Session.post", return_value=proxied) as post,
+            tempfile.TemporaryDirectory() as temp_dir,
+        ):
+            path = download_document(SAMPLE_URL, temp_dir)
+            with open(path, "rb") as handle:
+                self.assertEqual(handle.read(5), b"%PDF-")
+            self.assertEqual(post.call_count, 1)
+
+    def test_can_prefer_proxy_without_requesting_seace_directly(self):
+        proxied = FakeResponse(
+            200,
+            "https://licigob-proxy.example.workers.dev/",
+            b"%PDF-1.7\nfixture",
+            {"Content-Length": "16"},
+        )
+        with (
+            patch("document_fetcher.SEACE_DOCUMENT_PROXY_URL", proxied.url),
+            patch("document_fetcher.SEACE_DOCUMENT_PROXY_KEY", "test-key"),
+            patch("document_fetcher.SEACE_PROXY_FIRST", True),
+            patch("requests.Session.get") as direct,
+            patch("requests.Session.post", return_value=proxied),
+            tempfile.TemporaryDirectory() as temp_dir,
+        ):
+            path = download_document(SAMPLE_URL, temp_dir)
+            with open(path, "rb") as handle:
+                self.assertEqual(handle.read(5), b"%PDF-")
+            direct.assert_not_called()
 
     @unittest.skipUnless(os.getenv("RUN_LIVE_SEACE_TEST") == "1", "live SEACE test")
     def test_live_pdf_download(self):

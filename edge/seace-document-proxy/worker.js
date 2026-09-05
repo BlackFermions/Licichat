@@ -138,6 +138,18 @@ async function fetchSeaceDocument(sourceUrl) {
   return upstream;
 }
 
+function detectedContentType(bytes) {
+  const startsWith = (...expected) =>
+    expected.every((value, index) => bytes[index] === value);
+  if (startsWith(0x25, 0x50, 0x44, 0x46, 0x2d)) return "application/pdf";
+  if (startsWith(0x50, 0x4b, 0x03, 0x04) || startsWith(0x50, 0x4b, 0x05, 0x06)) {
+    return "application/zip";
+  }
+  if (startsWith(0x52, 0x61, 0x72, 0x21, 0x1a, 0x07)) return "application/vnd.rar";
+  if (startsWith(0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c)) return "application/x-7z-compressed";
+  return null;
+}
+
 function serviceUrl(base, path) {
   const url = new URL(base);
   if (url.protocol !== "https:") throw new Error("invalid_service_url");
@@ -269,7 +281,8 @@ async function legacyProxy(request, env) {
     if (document.byteLength === 0 || document.byteLength > MAX_FILE_BYTES) {
       return new Response("Invalid document size", { status: 413 });
     }
-    if (decoder.decode(document.slice(0, 5)) !== "%PDF-") {
+    const contentType = detectedContentType(new Uint8Array(document.slice(0, 8)));
+    if (!contentType) {
       return new Response("Unexpected document type", { status: 422 });
     }
     return new Response(document, {
@@ -277,7 +290,7 @@ async function legacyProxy(request, env) {
       headers: {
         "Cache-Control": "private, no-store",
         "Content-Length": String(document.byteLength),
-        "Content-Type": "application/pdf",
+        "Content-Type": contentType,
         "X-Content-Type-Options": "nosniff",
       },
     });

@@ -1,0 +1,33 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libarchive13 \
+        libpq5 \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        tesseract-ocr-spa \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-ingestion.txt ./
+RUN pip install --no-cache-dir -r requirements-ingestion.txt
+
+COPY document_fetcher.py ./
+COPY ingestion ./ingestion
+COPY tests/test_ingestion_chunking.py tests/test_ingestion_extractors.py /tmp/ingestion-tests/
+
+RUN python -m unittest discover -s /tmp/ingestion-tests -p "test_ingestion_*.py" -v \
+    && python -c "import fitz, libarchive, pytesseract; assert 'spa' in pytesseract.get_languages()" \
+    && rm -rf /tmp/ingestion-tests
+
+RUN useradd --create-home --uid 10001 worker \
+    && chown -R worker:worker /app
+
+USER worker
+
+CMD ["python", "-m", "ingestion.worker"]

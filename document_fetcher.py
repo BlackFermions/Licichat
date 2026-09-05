@@ -20,6 +20,12 @@ SEACE_USER_AGENT = os.getenv(
 SEACE_REFERER = os.getenv("SEACE_REFERER", "https://prod1.seace.gob.pe/portal/")
 SEACE_DOCUMENT_PROXY_URL = os.getenv("SEACE_DOCUMENT_PROXY_URL", "").strip()
 SEACE_DOCUMENT_PROXY_KEY = os.getenv("SEACE_DOCUMENT_PROXY_KEY", "").strip()
+SEACE_PROXY_FIRST = os.getenv("SEACE_PROXY_FIRST", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 ALLOWED_HOSTS = {
     host.strip().lower()
     for host in os.getenv(
@@ -37,8 +43,12 @@ _FILE_CODE_RE = re.compile(
 _MAGIC = {
     ".pdf": (b"%PDF-",),
     ".zip": (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
+    ".docx": (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
     ".rar": (b"Rar!\x1a\x07",),
+    ".7z": (b"7z\xbc\xaf\x27\x1c",),
 }
+
+_PROXY_FALLBACK_STATUS_CODES = {403, 408, 425, 429, 500, 502, 503, 504}
 
 
 class DocumentDownloadError(RuntimeError):
@@ -105,6 +115,62 @@ def _proxy_config() -> tuple[str, str] | None:
     return SEACE_DOCUMENT_PROXY_URL, parsed.hostname.lower()
 
 
+def _request_through_proxy(
+    session: requests.Session,
+    source_url: str,
+    timeout: tuple[int, int],
+) -> requests.Response:
+    proxy = _proxy_config()
+    if not proxy:
+        raise DocumentDownloadError(
+            "proxy_unavailable",
+            "No hay un proxy configurado para completar la descarga.",
+        )
+    proxy_url, proxy_host = proxy
+    try:
+        response = session.post(
+            proxy_url,
+            headers={
+                "User-Agent": SEACE_USER_AGENT,
+                "Accept": "application/pdf,application/octet-stream",
+                "Content-Type": "application/json",
+                "X-Proxy-Key": SEACE_DOCUMENT_PROXY_KEY,
+            },
+            json={"url": source_url},
+            stream=True,
+            timeout=timeout,
+            allow_redirects=False,
+        )
+    except requests.Timeout as exc:
+        raise DocumentDownloadError(
+            "proxy_timeout",
+            "El proxy excedio el tiempo limite de descarga.",
+        ) from exc
+    except requests.RequestException as exc:
+        raise DocumentDownloadError(
+            "proxy_download_failed",
+            "No se pudo conectar con el proxy de documentos.",
+        ) from exc
+    if response.status_code in {401, 403}:
+        raise DocumentDownloadError(
+            "proxy_forbidden",
+            "El proxy de documentos rechazo la descarga.",
+        )
+    final_host = (urlparse(response.url).hostname or "").lower()
+    if final_host != proxy_host:
+        raise DocumentDownloadError(
+            "unsafe_proxy_redirect",
+            "El proxy redirigio a un origen no permitido.",
+        )
+    if response.status_code >= 400:
+        response.close()
+        raise DocumentDownloadError(
+            "proxy_upstream_failed",
+            "El proxy no pudo obtener el documento desde SEACE.",
+        )
+    return response
+
+
 def download_document(
     raw_url: str,
     temp_dir: str,
@@ -126,50 +192,43 @@ def download_document(
 
     try:
         with requests.Session() as session:
-            response = session.get(
-                url,
-                headers=headers,
-                stream=True,
-                timeout=timeout,
-                allow_redirects=True,
-            )
-            if response.status_code == 403:
-                response.close()
-                proxy = _proxy_config()
-                if not proxy:
-                    raise DocumentDownloadError("seace_forbidden", "SEACE rechazo la descarga.")
-                proxy_url, proxy_host = proxy
-                response = session.post(
-                    proxy_url,
-                    headers={
-                        "User-Agent": SEACE_USER_AGENT,
-                        "Accept": "application/pdf,application/octet-stream",
-                        "Content-Type": "application/json",
-                        "X-Proxy-Key": SEACE_DOCUMENT_PROXY_KEY,
-                    },
-                    json={"url": url},
-                    stream=True,
-                    timeout=timeout,
-                    allow_redirects=False,
-                )
-                if response.status_code in {401, 403}:
-                    raise DocumentDownloadError(
-                        "proxy_forbidden",
-                        "El proxy de documentos rechazo la descarga.",
-                    )
-                final_host = (urlparse(response.url).hostname or "").lower()
-                if final_host != proxy_host:
-                    raise DocumentDownloadError(
-                        "unsafe_proxy_redirect",
-                        "El proxy redirigio a un origen no permitido.",
-                    )
+            response = None
+            used_proxy = False
+            direct_error: requests.RequestException | None = None
+            if SEACE_PROXY_FIRST and _proxy_config():
+                response = _request_through_proxy(session, url, timeout)
+                used_proxy = True
             else:
+                try:
+                    response = session.get(
+                        url,
+                        headers=headers,
+                        stream=True,
+                        timeout=timeout,
+                        allow_redirects=True,
+                    )
+                except requests.RequestException as exc:
+                    direct_error = exc
+
+            should_use_proxy = direct_error is not None or (
+                response is not None and response.status_code in _PROXY_FALLBACK_STATUS_CODES
+            )
+            if should_use_proxy and _proxy_config():
+                if response is not None:
+                    response.close()
+                response = _request_through_proxy(session, url, timeout)
+                used_proxy = True
+            elif direct_error is not None:
+                raise direct_error
+            elif response is not None and not used_proxy:
                 final_host = (urlparse(response.url).hostname or "").lower()
                 if final_host not in ALLOWED_HOSTS:
                     raise DocumentDownloadError(
                         "unsafe_redirect",
                         "SEACE redirigio a un origen no permitido.",
                     )
+            if response is None:
+                raise DocumentDownloadError("download_failed", "No se pudo iniciar la descarga.")
             response.raise_for_status()
 
             declared_size = int(response.headers.get("Content-Length") or 0)

@@ -81,9 +81,10 @@ INSERT INTO ai_ingestion_jobs (
     reason,
     priority,
     status,
+    available_at,
     pipeline_version
 )
-VALUES (%s, %s, %s, %s, 'pilot_seed', %s, 'pending', %s)
+VALUES (%s, %s, %s, %s, 'pilot_seed', %s, 'pending', 'infinity'::timestamptz, %s)
 ON CONFLICT (tender_id, source_signature, pipeline_version) DO NOTHING
 RETURNING id
 """
