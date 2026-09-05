@@ -112,6 +112,21 @@ def _document_preparation_request(message: str) -> bool:
     )
 
 
+def _award_document_question(message: str) -> bool:
+    return _message_has_any(
+        message,
+        (
+            "buena pro",
+            "otorgamiento",
+            "acta de apertura",
+            "acta de evaluacion",
+            "documento de adjudicacion",
+            "resultado del procedimiento",
+            "procedimiento desierto",
+        ),
+    )
+
+
 def _contract_delivery_question(message: str) -> bool:
     normalized = _normalize_message(message)
     if "contrat" not in normalized:
@@ -204,6 +219,15 @@ def _wants_detailed_answer(message: str) -> bool:
 
 def _build_question_guidance(message: str, supplier_question: bool, wants_detail: bool) -> str:
     guidance: list[str] = []
+
+    if _award_document_question(message):
+        guidance.append(
+            "La consulta pide el documento o acta de Buena Pro. Usa prioritariamente ese documento. "
+            "El titulo del archivo no prueba que exista un ganador: informa el resultado real del acta, "
+            "incluyendo si fue declarado desierto, y no lo sustituyas por reglas generales de las bases. "
+            "Si pregunta si puede verlo, aclara que esta disponible en la seccion Documentos del popup "
+            "y resume el resultado que contiene."
+        )
 
     if supplier_question:
         guidance.append(
@@ -600,6 +624,7 @@ REGLAS DE CONTENIDO:
 - No respondas solo "no se encontro informacion especifica" si existe evidencia indirecta que permite orientar al usuario. Da primero la conclusion razonable y luego aclara que no es una confirmacion total si aplica.
 - Conserva literalmente cifras, unidades, porcentajes, plazos y nombres de documentos.
 - Distingue siempre entre: (1) especificaciones tecnicas del bien o servicio, (2) requisitos o documentos obligatorios del postor y su oferta, y (3) factores de evaluacion que otorgan puntaje. No presentes un factor de evaluacion como requisito obligatorio.
+- Para preguntas sobre Buena Pro u otorgamiento, prioriza el acta o reporte de otorgamiento. El nombre del archivo no implica que exista ganador: respeta si el documento declara el proceso desierto o deja el otorgamiento sin efecto.
 - Si el usuario pregunta por "valor nutricional" o "valores nutricionales", entiende "valor" como caracteristica tecnica del bien, no como valor referencial o monto de la licitacion.
 - Distingue entre el correo/direccion para remitir o perfeccionar el contrato y el correo que el postor debe consignar para recibir notificaciones. Si el usuario pregunta a donde dirigir, remitir, enviar, presentar o suscribir el contrato, responde con el destino de remision/perfeccionamiento cuando aparezca en los extractos.
 - Todo criterio expresado mediante puntos, puntaje o metodologia de asignacion es un factor de evaluacion, salvo que el texto indique expresamente que tambien es obligatorio. Presentalo como una mejora valorada, no como un minimo exigido.

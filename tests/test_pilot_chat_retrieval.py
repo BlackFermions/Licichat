@@ -19,7 +19,8 @@ class PilotRetrievalTests(unittest.TestCase):
         conn = MagicMock()
         cursor = conn.cursor.return_value.__enter__.return_value
         cursor.fetchall.return_value = [{"page_count": 10, "text_char_count": 900,
-            "extraction_coverage": {"partial": True}, "detected_mime_type": "application/zip"}]
+            "extraction_coverage": {"partial": True}, "detected_mime_type": "application/zip",
+            "document_role": "buena_pro"}]
         with patch.object(pilot, "enabled", return_value=True), patch.object(pilot, "_connection", return_value=conn):
             status = pilot.pilot_status("1241981")
         self.assertTrue(status["partial"])
@@ -55,6 +56,19 @@ class PilotRetrievalTests(unittest.TestCase):
         params = cursor.execute.call_args.args[1]
         self.assertEqual(params[:4], ("1241981", "pilot-v1", "1241981", "pilot-v1"))
         self.assertIn("MATERIALIZED", cursor.execute.call_args.args[0])
+
+    def test_award_question_only_ranks_award_document(self):
+        client = MagicMock()
+        client.with_options.return_value.embeddings.create.return_value.data[0].embedding = [0.1] * 1536
+        conn = MagicMock()
+        cursor = conn.cursor.return_value.__enter__.return_value
+        cursor.fetchall.return_value = [{"source_title": "Otorgamiento de Buena Pro", "page_start": 1,
+                                        "page_end": 1, "content": "Resultado: desierto"}]
+        with patch.object(pilot, "pilot_status", return_value={"ready": True}), patch.object(pilot, "_connection", return_value=conn):
+            result = pilot.retrieve_pilot("1243819", "Se puede ver el documento de otorgamiento?", client)
+        self.assertIsNotNone(result)
+        self.assertIn("a.document_role = 'buena_pro'", cursor.execute.call_args.args[0])
+        self.assertEqual(result[2][0]["document"], "Otorgamiento de Buena Pro")
 
     def test_invalid_vector_falls_back(self):
         client = MagicMock()

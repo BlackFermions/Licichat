@@ -68,3 +68,10 @@ class PilotChatRouteTests(unittest.TestCase):
                 json={"tender_id": "outside", "message": "Analiza las bases", "use_document_pilot": True})
             self.assertIn("Bases analizadas", response.get_data(as_text=True))
             prepare.assert_called_once()
+
+    def test_award_guidance_does_not_assume_there_is_a_winner(self):
+        guidance = chat._build_question_guidance(
+            "Resume el otorgamiento de la buena pro", False, False
+        )
+        self.assertIn("no prueba que exista un ganador", guidance)
+        self.assertIn("declarado desierto", guidance)

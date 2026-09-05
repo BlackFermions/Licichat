@@ -3,6 +3,7 @@
 import logging
 import math
 import os
+import unicodedata
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -11,6 +12,10 @@ from lite_rag_engine import DB_CONFIG, MAX_CONTEXT_CHARS, _evidence_hint
 
 logger = logging.getLogger("licigob-ai-lite.pilot")
 PIPELINE_VERSION = "pilot-v1"
+AWARD_MARKERS = (
+    "buena pro", "otorgamiento", "acta de apertura", "acta de evaluacion",
+    "documento de adjudicacion", "resultado del procedimiento", "procedimiento desierto",
+)
 
 
 def enabled():
@@ -40,9 +45,15 @@ def coverage_message(status):
     return " ".join(warnings)
 
 
+def award_document_question(question):
+    normalized = unicodedata.normalize("NFKD", str(question or "").lower())
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    return any(marker in normalized for marker in AWARD_MARKERS)
+
+
 # Only a completed job with current source URLs can advertise prepared material.
 ASSETS_SQL = """
-    SELECT a.id, a.source_title, a.page_count, a.text_char_count,
+    SELECT a.id, a.source_title, a.document_role, a.page_count, a.text_char_count,
            a.extraction_coverage, a.detected_mime_type
     FROM ai_document_assets a
     JOIN ai_ingestion_jobs j ON j.id = a.job_id
@@ -75,6 +86,7 @@ def pilot_status(tender_id):
             assets = list(cursor.fetchall())
         if not assets:
             return None
+        roles = sorted({a["document_role"] for a in assets})
         status = {
             "ready": True,
             "source": "document_pilot",
@@ -83,6 +95,7 @@ def pilot_status(tender_id):
             "characters": sum(a["text_char_count"] or 0 for a in assets),
             "partial": any((a["extraction_coverage"] or {}).get("partial") for a in assets),
             "container_documents": any(a["detected_mime_type"] != "application/pdf" for a in assets),
+            "document_roles": roles,
         }
         status["warning"] = coverage_message(status)
         return status
@@ -134,6 +147,7 @@ def retrieve_pilot(tender_id, question, client, history=None):
             raise ValueError("invalid_embedding")
         vector = "[" + ",".join(str(float(v)) for v in embedding) + "]"
         conn = _connection()
+        role_filter = "AND a.document_role = 'buena_pro'" if award_document_question(question) else ""
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             # Materialize the tender subset before nearest-neighbour ranking. This
             # avoids filtering a global approximate index down to too few matches.
@@ -144,6 +158,7 @@ def retrieve_pilot(tender_id, question, client, history=None):
                         FROM ai_tender_chunks c JOIN assets a ON a.id = c.asset_id
                         WHERE c.tender_id = %s AND c.pipeline_version = %s
                           AND c.embedding IS NOT NULL
+                          {role_filter}
                     )
                     SELECT content, page_start, page_end, source_title FROM scoped
                     ORDER BY embedding <=> %s::vector LIMIT 6""",

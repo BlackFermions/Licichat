@@ -1,6 +1,6 @@
 # Licitaciones para probar el chatbot del buscador
 
-Muestra preparada: 46 licitaciones. Para encontrarlas en el buscador, usar
+Muestra preparada: 47 licitaciones. Para encontrarlas en el buscador, usar
 Filtros avanzados > Nomenclatura con el codigo de esta tabla y quitar filtros
 de fecha restrictivos. Comprobar el ID en el popup antes de preguntar.
 
@@ -8,7 +8,8 @@ de fecha restrictivos. Comprobar el ID en el popup antes de preguntar.
 
 | ID | Consulta |
 | --- | --- |
-| 1243819 | Que vehiculos y personal se requieren para transportar los medicamentos? |
+| 1231657 | Que vehiculos y personal se requieren para transportar los medicamentos? Luego pregunta por el ganador y el acta de Buena Pro. |
+| 1243819 | Resume el otorgamiento. Debe indicar que este registro fue declarado desierto, no que tuvo ganador. |
 | 1241981 | Que condiciones piden para el servicio de alimentacion y refrigerios? |
 | 1243812 | Que obra se requiere realizar? Cita las paginas. |
 | 1244018 | Que requisitos debe acreditar el postor? Separa los factores con puntaje. |
@@ -25,6 +26,7 @@ afirmar que un requisito no existe solo porque no aparece en los fragmentos.
 
 | ID | Nomenclatura | Lectura parcial |
 | --- | --- | --- |
+| 1231657 | CP-ABR-4-2026-RSDM-1 | No |
 | 1223598 | CP-ABR-2-2026-GRPUNO-DREP-OEC-1 | No |
 | 1235196 | LP-ABR-3-2026-MDSR/C-1 | No |
 | 1235776 | CP-ABR-13-2026-RED SALUD JAUJA-2 | No |
@@ -112,3 +114,21 @@ No usar como casos de exito del piloto: 1243339, 1243485, 1243490 (tamano),
   rechazando solicitudes anonimas con `401 AUTH_REQUIRED`.
 - No se ejecuto otra ingesta ni OCR al consultar el chat. Lite conserva
   0,5 vCPU / 1 GiB; no se crearon nuevos servicios.
+
+## Correccion por nomenclatura duplicada
+
+`CP-ABR-4-2026-RSDM-1` existe en dos registros distintos de SEACE. El ID
+`1231657` tiene el acta del 30 de julio y la adjudicacion por S/ 98.000 a
+TRANSPORTES VIRGEN DEL CARMEN - LUIS CARLOS PABLO ORBEZO. El ID `1243819`
+tiene un acta posterior que declara el procedimiento desierto. No se fusionan:
+cada chatbot consulta exclusivamente su propio ID y documentos.
+
+El filtro Codigo o proceso acepta ahora el ID interno exacto. Buscar `1231657`
+devuelve solo ese registro; buscar la nomenclatura devuelve ambos. Las consultas
+sobre Buena Pro u otorgamiento restringen la recuperacion al documento de
+otorgamiento y no a clausulas generales de las bases.
+
+Prueba del servicio sobre `1231657`: preparacion 0,67 s; resumen de Buena Pro
+3,55 s; disponibilidad del documento 2,62 s. El acta fue citada en paginas 1-2.
+Son mediciones puntuales, no un SLA. Tras inactividad el servicio puede tardar
+mas en arrancar porque conserva `minReplicas=0` para evitar costo fijo.
