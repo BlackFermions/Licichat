@@ -19,6 +19,17 @@ class ChunkingTests(unittest.TestCase):
     def test_empty_pages_return_no_chunks(self):
         self.assertEqual(build_chunks([], target_tokens=800, overlap_tokens=100), [])
 
+    def test_keeps_archive_member_provenance_and_never_mixes_members(self):
+        pages = [
+            ExtractedPage("0Acta de otorgamiento.pdf", 1, "Resultado y ganador. " * 20),
+            ExtractedPage("1Cuadro de evaluacion.pdf", 1, "Puntajes de los postores. " * 20),
+        ]
+        chunks = build_chunks(pages, target_tokens=500, overlap_tokens=50)
+        self.assertEqual(len(chunks), 2)
+        self.assertTrue(chunks[0].content.startswith("[Archivo interno: 0Acta de otorgamiento.pdf]"))
+        self.assertTrue(chunks[1].content.startswith("[Archivo interno: 1Cuadro de evaluacion.pdf]"))
+        self.assertNotIn("1Cuadro", chunks[0].content)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -49,6 +49,32 @@ class PilotChatRouteTests(unittest.TestCase):
             prompt = model.chat.completions.create.call_args.kwargs["messages"][0]["content"]
             self.assertIn("Texto de las bases", prompt)
 
+    def test_award_postor_question_does_not_request_unrelated_requirements(self):
+        status = {
+            "documents": 1, "pages": 2, "characters": 1000, "warning": "",
+            "selected_document_role": "buena_pro",
+        }
+        chunk = SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="Resultado."))])
+        with patch.object(
+            chat,
+            "retrieve_pilot",
+            return_value=(status, "Orden de prelacion", [{"document": "Acta", "page": "2"}]),
+        ), patch.object(chat, "get_tender_bundle", return_value=({"id": "1"}, [])), \
+             patch.object(chat, "openai_client") as model:
+            model.chat.completions.create.return_value = [chunk]
+            self.client.post(
+                "/api/v1/chat_stream",
+                headers=self.headers,
+                json={
+                    "tender_id": "1",
+                    "message": "Por que no ganaron los otros postores?",
+                    "use_document_pilot": True,
+                },
+            ).get_data(as_text=True)
+        user_prompt = model.chat.completions.create.call_args.kwargs["messages"][-1]["content"]
+        self.assertIn("exclusivamente el resultado del acta", user_prompt)
+        self.assertIn("No agregues requisitos", user_prompt)
+
     def test_non_search_caller_does_not_use_pilot(self):
         corpus = SimpleNamespace(document_count=1, total_pages=1, total_chars=400)
         with patch.object(chat, "pilot_status") as status, patch.object(chat, "retrieve_pilot") as retrieve, \
@@ -75,6 +101,22 @@ class PilotChatRouteTests(unittest.TestCase):
         )
         self.assertIn("no prueba que exista un ganador", guidance)
         self.assertIn("declarado desierto", guidance)
+
+    def test_award_follow_up_guidance_keeps_each_postor_result_separate(self):
+        guidance = chat._build_question_guidance(
+            "Por que no ganaron los otros?", False, True, "buena_pro"
+        )
+        self.assertIn("enumera cada postor", guidance)
+        self.assertIn("solo superado por precio", guidance)
+        self.assertIn("luego descalificado", guidance)
+        self.assertIn("solo cuando el acta lo indique", guidance)
+
+    def test_experience_guidance_preserves_mype_exception(self):
+        guidance = chat._build_question_guidance(
+            "Que experiencia debe acreditar el postor?", True, True, "bases"
+        )
+        self.assertIn("requisito general", guidance)
+        self.assertIn("MYPE", guidance)
 
     def test_objective_question_is_not_treated_as_supplier_requirements(self):
         self.assertTrue(chat._procurement_objective_question("Cual es el objetivo de la licitacion?"))

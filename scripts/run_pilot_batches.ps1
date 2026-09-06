@@ -1,6 +1,7 @@
 param(
     [string]$ResourceGroup = "licigobrsg",
     [string]$JobName = "licigob-ai-ingestion-job",
+    [string]$PipelineVersion = "pilot-v1",
     [ValidateRange(1, 2)][int]$MaxConcurrent = 1,
     [ValidateRange(1, 10)][int]$MaxExecutions = 1
 )
@@ -24,7 +25,7 @@ try {
         $active = @($records | Where-Object {
             $_.properties.status -notin @("Succeeded", "Failed", "Stopped", "Degraded")
         })
-        $query = "SELECT count(*) FROM ai_ingestion_jobs WHERE pipeline_version='pilot-v1' AND status='pending' AND available_at<=NOW();"
+        $query = "SELECT count(*) FROM ai_ingestion_jobs WHERE pipeline_version='$PipelineVersion' AND status='pending' AND available_at<=NOW();"
         $pendingOutput = & psql -h $env:DB_HOST -U $env:DB_USER -d $env:DB_NAME -v ON_ERROR_STOP=1 -At -c $query
         if ($LASTEXITCODE -ne 0) { throw "Cannot inspect the ingestion queue" }
         $pending = [int]$pendingOutput

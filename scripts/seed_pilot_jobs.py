@@ -14,7 +14,7 @@ import psycopg2
 from psycopg2.extras import Json, RealDictCursor
 
 
-PIPELINE_VERSION = "pilot-v1"
+DEFAULT_PIPELINE_VERSION = os.getenv("AI_PIPELINE_VERSION", "pilot-v1").strip()
 
 SELECTION_SQL = """
 SELECT
@@ -106,6 +106,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--end", type=parse_date, default=today_utc)
     parser.add_argument("--limit", type=int, default=0, help="0 procesa todo el intervalo")
     parser.add_argument("--priority", type=int, default=50)
+    parser.add_argument("--pipeline-version", default=DEFAULT_PIPELINE_VERSION)
     parser.add_argument("--apply", action="store_true")
     return parser.parse_args()
 
@@ -215,7 +216,7 @@ def main() -> int:
                         Json(documents),
                         len(documents),
                         args.priority,
-                        PIPELINE_VERSION,
+                        args.pipeline_version,
                     ),
                 )
                 if cursor.fetchone():

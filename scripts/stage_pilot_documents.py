@@ -181,16 +181,24 @@ def main() -> int:
                         name = filename(document)
                         with conn.cursor() as cursor:
                             cursor.execute(
-                                """SELECT original_object_key FROM ai_document_assets
+                                """SELECT original_object_key, detected_mime_type, sha256, byte_size
+                                   FROM ai_document_assets
                                    WHERE tender_id = %s AND source_document_id = %s
                                      AND source_url = %s AND extracted_filename = %s
-                                     AND pipeline_version = %s""",
+                                     AND original_object_key IS NOT NULL
+                                   ORDER BY (pipeline_version = %s) DESC, updated_at DESC
+                                   LIMIT 1""",
                                 (job["tender_id"], document["source_document_id"],
                                  document["url"], name, args.pipeline_version),
                             )
                             existing = cursor.fetchone()
                         conn.commit()
                         if existing and existing[0] and container.get_blob_client(existing[0]).exists():
+                            upsert_asset(
+                                conn, job, document, name, existing[0], existing[1],
+                                existing[2], existing[3], args.pipeline_version,
+                            )
+                            conn.commit()
                             staged += 1
                             print(f"  tender={job['tender_id']} role={role} cached")
                             continue

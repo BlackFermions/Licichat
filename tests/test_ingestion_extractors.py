@@ -8,7 +8,14 @@ from unittest.mock import MagicMock, patch
 
 from ingestion.config import Settings
 from ingestion.errors import IngestionError
-from ingestion.extractors import _extract_pdf, _read_zip_members, _safe_member_name, detect_kind, source_suffix
+from ingestion.extractors import (
+    _extract_pdf,
+    _read_zip_members,
+    _requires_ocr,
+    _safe_member_name,
+    detect_kind,
+    source_suffix,
+)
 
 
 def settings_fixture() -> Settings:
@@ -28,6 +35,24 @@ def settings_fixture() -> Settings:
 
 
 class ExtractorTests(unittest.TestCase):
+    def test_detects_scanned_body_even_when_header_has_enough_native_text(self):
+        page = MagicMock()
+        page.rect = MagicMock(x0=0, y0=0, width=600, height=800)
+        page.get_image_info.return_value = [{"bbox": (0, 100, 600, 760)}]
+        page.get_text.side_effect = lambda kind, **kwargs: (
+            [(20, 10, 580, 70, "RED DE SALUD DOS DE MAYO BASES INTEGRADAS PAGINA VEINTIDOS")]
+            if kind == "blocks"
+            else "RED DE SALUD DOS DE MAYO BASES INTEGRADAS PAGINA VEINTIDOS"
+        )
+        self.assertTrue(_requires_ocr(page, "encabezado seleccionable " * 8, 80))
+
+    def test_does_not_ocr_short_native_body_without_large_image(self):
+        page = MagicMock()
+        page.rect = MagicMock(x0=0, y0=0, width=600, height=800)
+        page.get_image_info.return_value = [{"bbox": (20, 20, 80, 80)}]
+        page.get_text.return_value = [(20, 200, 580, 500, "Requisito tecnico valido " * 8)]
+        self.assertFalse(_requires_ocr(page, "Requisito tecnico valido " * 8, 80))
+
     def test_reports_partial_coverage_when_ocr_budget_is_exhausted(self):
         document = MagicMock()
         document.needs_pass = False
@@ -36,7 +61,7 @@ class ExtractorTests(unittest.TestCase):
         runtime = MagicMock()
         runtime.open.return_value.__enter__.return_value = document
         with patch("ingestion.extractors.fitz", runtime), patch(
-            "ingestion.extractors._ocr_page", return_value="texto extraido"
+            "ingestion.extractors._ocr_page", return_value="texto extraido " * 10
         ) as ocr:
             result = _extract_pdf(b"fixture", "bases.pdf", settings_fixture())
         self.assertEqual(ocr.call_count, 2)

@@ -217,6 +217,58 @@ def _ocr_page(page: "fitz.Page", dpi: int) -> str:
     return _clean_text(pytesseract.image_to_string(image, lang="spa+eng", config="--oem 1"))
 
 
+def _page_image_coverage(page: "fitz.Page") -> float:
+    """Estimate image coverage to catch scanned bodies with selectable headers."""
+    try:
+        rect = page.rect
+        page_area = max(float(rect.width) * float(rect.height), 1.0)
+        image_area = 0.0
+        for info in page.get_image_info() or []:
+            bbox = info.get("bbox") if isinstance(info, dict) else None
+            if not bbox or len(bbox) < 4:
+                continue
+            x0, y0, x1, y1 = (float(value) for value in bbox[:4])
+            image_area += max(0.0, x1 - x0) * max(0.0, y1 - y0)
+        return min(image_area / page_area, 1.0)
+    except (AttributeError, TypeError, ValueError):
+        return 0.0
+
+
+def _body_text_chars(page: "fitz.Page") -> int | None:
+    try:
+        rect = page.rect
+        top = float(rect.y0) + float(rect.height) * 0.12
+        bottom = float(rect.y0) + float(rect.height) * 0.88
+        total = 0
+        for block in page.get_text("blocks", sort=True) or []:
+            if not isinstance(block, (tuple, list)) or len(block) < 5:
+                continue
+            y0, y1 = float(block[1]), float(block[3])
+            if y1 <= top or y0 >= bottom:
+                continue
+            total += len(re.sub(r"\s+", "", str(block[4] or "")))
+        return total
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _requires_ocr(page: "fitz.Page", native: str, minimum_chars: int) -> bool:
+    native_chars = len(re.sub(r"\s+", "", native))
+    if native_chars < minimum_chars:
+        return True
+    body_chars = _body_text_chars(page)
+    if body_chars is None:
+        return False
+    # Some SEACE PDFs expose headers and thousands of layout spaces as a text
+    # layer while the meaningful center of the page remains an image. Body
+    # sparsity is therefore a stronger signal than raw image metadata, which
+    # varies between PDF producers and PyMuPDF versions.
+    return (
+        native_chars < max(600, minimum_chars * 6)
+        and body_chars < max(120, minimum_chars)
+    )
+
+
 def _extract_pdf(data: bytes, name: str, settings: Settings) -> ExtractionResult:
     if fitz is None:
         raise IngestionError("pdf_runtime_missing", "El lector PDF no esta disponible.")
@@ -239,14 +291,23 @@ def _extract_pdf(data: bytes, name: str, settings: Settings) -> ExtractionResult
                     break
                 page = document[index]
                 native = _clean_text(page.get_text("text", sort=True))
-                non_space_chars = len(re.sub(r"\s+", "", native))
                 used_ocr = False
                 text = native
-                if non_space_chars < settings.native_text_min_chars:
+                if _requires_ocr(page, native, settings.native_text_min_chars):
                     if ocr_pages < settings.ocr_max_pages:
-                        text = _ocr_page(page, settings.ocr_dpi)
-                        used_ocr = True
+                        ocr_text = _ocr_page(page, settings.ocr_dpi)
                         ocr_pages += 1
+                        if len(re.sub(r"\s+", "", ocr_text)) >= settings.native_text_min_chars:
+                            text = ocr_text
+                            used_ocr = True
+                        elif native:
+                            if "ocr_low_text" not in warnings:
+                                warnings.append("ocr_low_text")
+                        else:
+                            skipped_pages += 1
+                            if "ocr_low_text" not in warnings:
+                                warnings.append("ocr_low_text")
+                            continue
                     else:
                         skipped_pages += 1
                         if "ocr_limit_reached" not in warnings:

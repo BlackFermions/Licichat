@@ -14,6 +14,7 @@ class _Piece:
     text: str
     page: int
     section: str | None
+    document: str
 
 
 def _looks_like_heading(line: str) -> bool:
@@ -62,7 +63,7 @@ def _pieces(pages: list[ExtractedPage], max_chars: int) -> list[_Piece]:
             if _looks_like_heading(first_line):
                 section = first_line[:240]
             for part in _split_long_text(cleaned, max_chars):
-                output.append(_Piece(part, page.page, section))
+                output.append(_Piece(part, page.page, section, page.document))
     return output
 
 
@@ -80,7 +81,11 @@ def build_chunks(
         nonlocal current, current_chars
         if not current:
             return
-        content = "\n\n".join(piece.text for piece in current).strip()
+        source_document = current[0].document
+        content = (
+            f"[Archivo interno: {source_document}]\n"
+            + "\n\n".join(piece.text for piece in current).strip()
+        )
         chunks.append(
             TextChunk(
                 index=len(chunks),
@@ -106,6 +111,10 @@ def build_chunks(
         current_chars = retained_chars
 
     for piece in pieces:
+        if current and piece.document != current[0].document:
+            flush()
+            current = []
+            current_chars = 0
         projected = current_chars + len(piece.text) + (2 if current else 0)
         if current and projected > target_chars:
             flush()
