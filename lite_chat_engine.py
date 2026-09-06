@@ -123,6 +123,17 @@ def _award_document_question(message: str) -> bool:
             "documento de adjudicacion",
             "resultado del procedimiento",
             "procedimiento desierto",
+            "ya termino",
+            "ya finalizo",
+            "ya concluyo",
+            "ya acabo",
+            "se cerro",
+            "esta cerrada",
+            "esta finalizada",
+            "esta concluida",
+            "sigue vigente",
+            "estado actual del proceso",
+            "estado de la licitacion",
         ),
     )
 

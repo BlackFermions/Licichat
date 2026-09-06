@@ -102,6 +102,9 @@ class PilotChatRouteTests(unittest.TestCase):
         self.assertIn("no prueba que exista un ganador", guidance)
         self.assertIn("declarado desierto", guidance)
 
+    def test_completion_question_is_treated_as_an_award_question(self):
+        self.assertTrue(chat._award_document_question("Ya termino la licitacion?"))
+
     def test_award_follow_up_guidance_keeps_each_postor_result_separate(self):
         guidance = chat._build_question_guidance(
             "Por que no ganaron los otros?", False, True, "buena_pro"

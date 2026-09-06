@@ -27,6 +27,9 @@ AWARD_MARKERS = (
     "declarado desierto", "declarada desierta", "ofertas presentadas", "puntaje obtenido",
     "ofertas recibidas", "cuantas ofertas", "cuantos postores", "postores se presentaron",
     "monto adjudicado", "resultado final", "orden de prelacion",
+    "ya termino", "ya finalizo", "ya concluyo", "ya acabo", "se cerro",
+    "esta cerrada", "esta finalizada", "esta concluida", "sigue vigente",
+    "estado actual del proceso", "estado de la licitacion",
 )
 AWARD_FOLLOW_UP_MARKERS = (
     "ese resultado", "este resultado", "por que", "motivo", "motivos", "razon", "razones",

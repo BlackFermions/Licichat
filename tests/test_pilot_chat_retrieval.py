@@ -133,6 +133,12 @@ class PilotRetrievalTests(unittest.TestCase):
             "buena_pro",
         )
 
+    def test_completion_question_routes_to_award_document(self):
+        self.assertEqual(
+            pilot.infer_document_role("Ya termino la licitacion?"),
+            "buena_pro",
+        )
+
     def test_amount_query_expands_contract_vocabulary_without_changing_role(self):
         query = pilot._retrieval_query("Cual era el presupuesto?", [], "bases")
         self.assertIn("valor estimado", query)
