@@ -34,7 +34,7 @@ def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Guarda originales del piloto en Blob.")
     parser.add_argument("--tender-id")
     parser.add_argument("--limit", type=int, default=1)
-    parser.add_argument("--pipeline-version", default="pilot-v1")
+    parser.add_argument("--pipeline-version", default="pilot-v2")
     return parser.parse_args()
 
 

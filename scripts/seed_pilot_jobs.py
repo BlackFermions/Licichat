@@ -14,7 +14,7 @@ import psycopg2
 from psycopg2.extras import Json, RealDictCursor
 
 
-DEFAULT_PIPELINE_VERSION = os.getenv("AI_PIPELINE_VERSION", "pilot-v1").strip()
+DEFAULT_PIPELINE_VERSION = os.getenv("AI_PIPELINE_VERSION", "pilot-v2").strip()
 
 SELECTION_SQL = """
 SELECT

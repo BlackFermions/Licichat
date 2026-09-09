@@ -123,7 +123,7 @@ resource ingestionJob 'Microsoft.App/jobs@2024-03-01' = {
           env: [
             {
               name: 'AI_PIPELINE_VERSION'
-              value: 'pilot-v1'
+              value: 'pilot-v2'
             }
             {
               name: 'AI_STORAGE_PROVIDER'

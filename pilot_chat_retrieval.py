@@ -12,7 +12,7 @@ from psycopg2.extras import RealDictCursor
 from lite_rag_engine import DB_CONFIG, MAX_CONTEXT_CHARS, _evidence_hint
 
 logger = logging.getLogger("licigob-ai-lite.pilot")
-PIPELINE_VERSION = os.getenv("AI_PIPELINE_VERSION", "pilot-v1").strip()
+PIPELINE_VERSION = os.getenv("AI_PIPELINE_VERSION", "pilot-v2").strip()
 
 
 def _pipeline_versions():

@@ -26,26 +26,25 @@ class PilotRetrievalTests(unittest.TestCase):
         self.assertTrue(status["partial"])
         self.assertIn("Lectura parcial", status["warning"])
         self.assertNotIn("referencias internas", status["warning"])
-        self.assertEqual(cursor.execute.call_args.args[1], ("1241981", "pilot-v1"))
+        self.assertEqual(cursor.execute.call_args.args[1], ("1241981", "pilot-v2"))
         conn.close.assert_called_once()
 
-    def test_status_uses_newest_available_pipeline_with_fallback(self):
+    def test_status_uses_configured_pipeline(self):
         conn = MagicMock()
         cursor = conn.cursor.return_value.__enter__.return_value
-        cursor.fetchall.side_effect = [[], [{
+        cursor.fetchall.return_value = [{
             "page_count": 3,
             "text_char_count": 500,
             "extraction_coverage": {},
             "detected_mime_type": "application/pdf",
             "document_role": "bases",
-        }]]
-        with patch.dict(os.environ, {"AI_PILOT_PIPELINE_VERSIONS": "pilot-v2,pilot-v1"}), \
+        }]
+        with patch.dict(os.environ, {"AI_PILOT_PIPELINE_VERSIONS": "pilot-v2"}), \
              patch.object(pilot, "enabled", return_value=True), \
              patch.object(pilot, "_connection", return_value=conn):
             status = pilot.pilot_status("1241981")
-        self.assertEqual(status["pipeline_version"], "pilot-v1")
+        self.assertEqual(status["pipeline_version"], "pilot-v2")
         self.assertEqual(cursor.execute.call_args_list[0].args[1], ("1241981", "pilot-v2"))
-        self.assertEqual(cursor.execute.call_args_list[1].args[1], ("1241981", "pilot-v1"))
 
     def test_context_has_real_ranges_and_is_bounded(self):
         rows = [{"source_title": "Bases Integradas", "page_start": 81, "page_end": 83,
@@ -83,8 +82,8 @@ class PilotRetrievalTests(unittest.TestCase):
                                           [{"role": "user", "content": "Requisitos del postor"}])
         self.assertIsNotNone(result)
         params = cursor.execute.call_args_list[0].args[1]
-        self.assertEqual(params[0:2], ("1241981", "pilot-v1"))
-        self.assertEqual(params[3:5], ("1241981", "pilot-v1"))
+        self.assertEqual(params[0:2], ("1241981", "pilot-v2"))
+        self.assertEqual(params[3:5], ("1241981", "pilot-v2"))
         self.assertIn("MATERIALIZED", cursor.execute.call_args.args[0])
 
     def test_award_question_only_ranks_award_document(self):

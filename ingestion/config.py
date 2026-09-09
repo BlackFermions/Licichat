@@ -77,7 +77,7 @@ class Settings:
         if not worker_id:
             worker_id = f"{socket.gethostname()}-{uuid.uuid4().hex[:8]}"
         return cls(
-            pipeline_version=os.getenv("AI_PIPELINE_VERSION", "pilot-v1").strip(),
+            pipeline_version=os.getenv("AI_PIPELINE_VERSION", "pilot-v2").strip(),
             worker_id=worker_id[:120],
             batch_size=_integer("AI_JOB_BATCH_SIZE", 10, 1, 100),
             stale_lock_minutes=_integer("AI_STALE_LOCK_MINUTES", 90, 10, 1440),
