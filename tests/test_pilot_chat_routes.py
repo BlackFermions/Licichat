@@ -105,6 +105,16 @@ class PilotChatRouteTests(unittest.TestCase):
     def test_completion_question_is_treated_as_an_award_question(self):
         self.assertTrue(chat._award_document_question("Ya termino la licitacion?"))
 
+    def test_document_download_rejection_has_an_actionable_message(self):
+        self.assertIn(
+            "SEACE no permitio descargar",
+            chat._document_preparation_error_message("proxy_upstream_failed"),
+        )
+        self.assertIn(
+            "texto legible",
+            chat._document_preparation_error_message("unexpected_content"),
+        )
+
     def test_award_follow_up_guidance_keeps_each_postor_result_separate(self):
         guidance = chat._build_question_guidance(
             "Por que no ganaron los otros?", False, True, "buena_pro"

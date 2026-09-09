@@ -138,6 +138,26 @@ def _award_document_question(message: str) -> bool:
     )
 
 
+def _document_preparation_error_message(code: str) -> str:
+    """Return a safe, actionable message without exposing upstream details."""
+    normalized = str(code or "").lower()
+    if normalized == "ocr_required":
+        return "Este PDF parece escaneado y requiere OCR. Aun no podemos analizarlo automaticamente."
+    if normalized in {"file_too_large", "document_too_large"}:
+        return "El PDF supera el limite de tamano para el analisis inmediato."
+    if normalized in {"no_text", "unexpected_content", "empty_file"}:
+        return "El archivo se descargo, pero no contiene texto legible para el analisis."
+    if normalized in {
+        "proxy_upstream_failed", "proxy_forbidden", "proxy_download_failed", "proxy_timeout",
+        "download_failed", "download_timeout",
+    }:
+        return (
+            "SEACE no permitio descargar las bases en este momento. "
+            "El documento aun no esta procesado; intenta nuevamente mas tarde."
+        )
+    return "No pudimos preparar los documentos en este momento. Intenta nuevamente en unos minutos."
+
+
 def _supplier_requirements_question(message: str) -> bool:
     return _message_has_any(
         message,
@@ -807,12 +827,10 @@ CONTROL FINAL ANTES DE RESPONDER:
             )
         except LiteRagError as exc:
             logger.warning("document_unavailable tender=%s code=%s", tender_id, exc.code)
-            if exc.code == "ocr_required":
-                yield "Este PDF parece escaneado y requiere OCR. Esta primera version procesa PDF con texto seleccionable."
-            elif exc.code == "no_pdf":
+            if exc.code == "no_pdf":
                 yield "Esta licitacion no tiene documentos PDF compatibles para analizar."
             else:
-                yield "No pudimos preparar los documentos en este momento. Intenta nuevamente en unos minutos."
+                yield _document_preparation_error_message(exc.code)
         except Exception:
             logger.exception("chat_failed tender=%s", tender_id)
             yield "No pudimos completar el analisis documental. Intenta nuevamente."
