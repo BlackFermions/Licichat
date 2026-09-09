@@ -111,6 +111,31 @@ class DocumentFetcherTests(unittest.TestCase):
                 self.assertEqual(handle.read(5), b"%PDF-")
             direct.assert_not_called()
 
+    def test_falls_back_to_direct_seace_when_preferred_proxy_fails(self):
+        proxied = FakeResponse(
+            502,
+            "https://licigob-proxy.example.workers.dev/",
+        )
+        direct = FakeResponse(
+            200,
+            SAMPLE_URL,
+            b"%PDF-1.7\nfixture",
+            {"Content-Length": "16"},
+        )
+        with (
+            patch("document_fetcher.SEACE_DOCUMENT_PROXY_URL", proxied.url),
+            patch("document_fetcher.SEACE_DOCUMENT_PROXY_KEY", "test-key"),
+            patch("document_fetcher.SEACE_PROXY_FIRST", True),
+            patch("requests.Session.post", return_value=proxied) as post,
+            patch("requests.Session.get", return_value=direct) as get,
+            tempfile.TemporaryDirectory() as temp_dir,
+        ):
+            path = download_document(SAMPLE_URL, temp_dir)
+            with open(path, "rb") as handle:
+                self.assertEqual(handle.read(5), b"%PDF-")
+            self.assertEqual(post.call_count, 1)
+            self.assertEqual(get.call_count, 1)
+
     @unittest.skipUnless(os.getenv("RUN_LIVE_SEACE_TEST") == "1", "live SEACE test")
     def test_live_pdf_download(self):
         with tempfile.TemporaryDirectory() as temp_dir:

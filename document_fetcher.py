@@ -194,10 +194,27 @@ def download_document(
         with requests.Session() as session:
             response = None
             used_proxy = False
+            proxy_attempted = False
             direct_error: requests.RequestException | None = None
             if SEACE_PROXY_FIRST and _proxy_config():
-                response = _request_through_proxy(session, url, timeout)
-                used_proxy = True
+                proxy_attempted = True
+                try:
+                    response = _request_through_proxy(session, url, timeout)
+                    used_proxy = True
+                except DocumentDownloadError:
+                    # Cloudflare can be rejected by SEACE even when the origin
+                    # remains reachable from the Container App. Try it directly
+                    # before reporting the document as unavailable.
+                    try:
+                        response = session.get(
+                            url,
+                            headers=headers,
+                            stream=True,
+                            timeout=timeout,
+                            allow_redirects=True,
+                        )
+                    except requests.RequestException as exc:
+                        direct_error = exc
             else:
                 try:
                     response = session.get(
@@ -213,7 +230,7 @@ def download_document(
             should_use_proxy = direct_error is not None or (
                 response is not None and response.status_code in _PROXY_FALLBACK_STATUS_CODES
             )
-            if should_use_proxy and _proxy_config():
+            if should_use_proxy and not proxy_attempted and _proxy_config():
                 if response is not None:
                     response.close()
                 response = _request_through_proxy(session, url, timeout)
