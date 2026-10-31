@@ -23,6 +23,7 @@ import psycopg2
 import httpx
 import queue
 import threading
+from functools import lru_cache
 from psycopg2.extras import RealDictCursor
 from openai import AzureOpenAI
 from dotenv import load_dotenv
@@ -41,6 +42,7 @@ DB_CONFIG = {
     "database": os.getenv("DB_NAME"),
     "port":     int(os.getenv("DB_PORT", "5432")),
     "sslmode":  os.getenv("DB_SSLMODE", "require"),
+    "connect_timeout": 10,
 }
 
 _http = httpx.Client(
@@ -127,12 +129,18 @@ def _release_conn(conn):
 # EMBEDDINGS
 # =================================================================
 
+@lru_cache(maxsize=128)
+def _embedding_values(texto: str) -> tuple:
+    """Reutiliza vectores de perfiles iguales; las excepciones no se cachean."""
+    resp = client.embeddings.create(input=[texto], model=DEPLOYMENT)
+    return tuple(resp.data[0].embedding)
+
+
 def get_embedding(texto: str) -> np.ndarray | None:
-    """Genera embedding con Azure OpenAI."""
+    """Genera embedding con Azure OpenAI o reutiliza el del mismo texto."""
     try:
         texto = texto.replace("\n", " ").strip()[:2000]
-        resp  = client.embeddings.create(input=[texto], model=DEPLOYMENT)
-        return np.array(resp.data[0].embedding, dtype="float32")
+        return np.array(_embedding_values(texto), dtype="float32")
     except Exception as e:
         print(f"   ❌ Error embedding: {e}")
         return None
@@ -188,6 +196,19 @@ LEFT JOIN parties p ON p.id = t.buyer_id
 {where_clause}
 ORDER BY le.embedding <=> %s::vector
 LIMIT %s;
+"""
+
+# Este chequeo solo lee IDs y filtros, nunca las columnas vectoriales. Sin
+# candidatos recientes, HNSW iterative_scan recorrería el índice para acabar
+# devolviendo cero filas antes de que pudiéramos intentar el histórico.
+SQL_CANDIDATES_EXIST = """
+SELECT EXISTS (
+    SELECT 1
+    FROM tenders t
+    JOIN licitaciones_embeddings le ON le.tender_id = t.id
+    LEFT JOIN parties p ON p.id = t.buyer_id
+    {where_clause}
+);
 """
 
 # Mapeo contract_types del perfil → main_procurement_category de tenders
@@ -358,6 +379,12 @@ def buscar_licitaciones(query: str,
         try:
             t1 = time.time()
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                if attempt_recent:
+                    cur.execute(SQL_CANDIDATES_EXIST.format(where_clause=where), params_extra)
+                    if not cur.fetchone()["exists"]:
+                        print("   ℹ️  Sin vectores recientes para estos filtros — consultando histórico")
+                        continue
+
                 # pgvector 0.8+ debe seguir explorando el índice cuando los
                 # filtros de fecha/perfil descartan los vecinos iniciales.
                 cur.execute("SET LOCAL hnsw.iterative_scan = strict_order")
