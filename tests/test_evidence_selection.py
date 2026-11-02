@@ -76,6 +76,11 @@ class EvidenceSelectionTests(unittest.TestCase):
         self.assertEqual(invalid, 1)
         self.assertNotIn('E999', text)
 
+    def test_different_document_year_is_not_an_archive_alias(self):
+        text, invalid = validate_citations('Dato [2025Bases.pdf, p. 2].',
+            [{'document':'2026Bases.pdf','page':'2'}])
+        self.assertEqual(invalid, 1)
+
     def test_ambiguous_archive_member_alias_is_not_accepted(self):
         text, invalid = validate_citations('Dato [Acta.pdf, p. 2].',
             [{'document':'0Acta.pdf','page':'1-2'}, {'document':'1Acta.pdf','page':'1-2'}])

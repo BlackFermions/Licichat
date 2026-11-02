@@ -18,7 +18,8 @@ def validate_citations(text, references, evidence=()):
     invalid = 0
 
     def title_key(value):
-        return re.sub(r"^\d+\s*", "", normalize(value).strip())
+        # Archive member prefixes 0Acta/1Reporte are aliases, not years/versions.
+        return re.sub(r"^\d{1,2}(?=[a-z\s])\s*", "", normalize(value).strip())
 
     def page_range(value):
         parts = [int(p) for p in re.split(r"\s*[-–]\s*", str(value))]

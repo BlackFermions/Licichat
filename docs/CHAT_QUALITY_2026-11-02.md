@@ -83,7 +83,7 @@ No se promete exactitud del 100% ni un SLA de latencia.
 
 ## Validacion y despliegue
 
-86 tests IA aprobados, una prueba de descarga deliberadamente omitida; cuatro
+87 tests IA aprobados, una prueba de descarga deliberadamente omitida; cuatro
 subtests negativos. Backend: 64 tests. Frontend: 12 de permisos y siete de
 documentos; ESLint de los JS/JSX modificados y build aprobados.
 Edge headless con APIs simuladas y trafico externo bloqueado: exito estructurado,
