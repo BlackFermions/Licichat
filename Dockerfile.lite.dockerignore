@@ -5,4 +5,5 @@
 !lite_rag_engine.py
 !lite_chat_engine.py
 !pilot_chat_retrieval.py
+!evidence_selection.py
 !match_engine_pgvector.py

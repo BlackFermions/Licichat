@@ -96,8 +96,8 @@ class PilotRetrievalTests(unittest.TestCase):
         with patch.object(pilot, "pilot_status", return_value={"ready": True}), patch.object(pilot, "_connection", return_value=conn):
             result = pilot.retrieve_pilot("1243819", "Se puede ver el documento de otorgamiento?", client)
         self.assertIsNotNone(result)
-        self.assertIn("a.document_role = %s", cursor.execute.call_args.args[0])
-        self.assertEqual(cursor.execute.call_args_list[0].args[1][5], "buena_pro")
+        self.assertIn("a.document_role = ANY(%s)", cursor.execute.call_args.args[0])
+        self.assertEqual(cursor.execute.call_args_list[0].args[1][5], ["buena_pro"])
         self.assertEqual(result[2][0]["document"], "Otorgamiento de Buena Pro")
 
     def test_non_award_question_only_ranks_bases(self):
@@ -114,8 +114,8 @@ class PilotRetrievalTests(unittest.TestCase):
              patch.object(pilot, "_connection", return_value=connection):
             result = pilot.retrieve_pilot("1", "Cual es el objetivo?", client)
         self.assertIsNotNone(result)
-        self.assertIn("a.document_role = %s", cursor.execute.call_args.args[0])
-        self.assertEqual(cursor.execute.call_args.args[1][5], "bases")
+        self.assertIn("a.document_role = ANY(%s)", cursor.execute.call_args.args[0])
+        self.assertEqual(cursor.execute.call_args.args[1][5], ["bases"])
         self.assertEqual(result[2][0]["document"], "Bases")
 
     def test_award_follow_up_inherits_role_from_history(self):
@@ -144,11 +144,12 @@ class PilotRetrievalTests(unittest.TestCase):
         self.assertIn("cuantia de la contratacion", query)
         self.assertEqual(pilot.infer_document_role("Cual era el presupuesto?"), "bases")
 
-    def test_invalid_vector_falls_back(self):
+    def test_invalid_vector_is_temporary_error_not_missing_material(self):
         client = MagicMock()
         client.with_options.return_value.embeddings.create.return_value.data[0].embedding = [float("nan")] * 1536
         with patch.object(pilot, "pilot_status", return_value={"ready": True}), patch.object(pilot, "_connection") as connect:
-            self.assertIsNone(pilot.retrieve_pilot("1241981", "pregunta", client))
+            with self.assertRaises(pilot.PilotUnavailable):
+                pilot.retrieve_pilot("1241981", "pregunta", client)
             connect.assert_not_called()
 
 
