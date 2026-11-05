@@ -558,7 +558,7 @@ def edge_ingest():
 
 @app.post('/api/v1/private-document')
 def upload_private_document():
-    if not _edge_authorized():
+    if not _authorized():
         return jsonify({'status': 'error', 'code': 'unauthorized'}), 401
     user_id = request.headers.get('X-User-Id', '')
     tender_id = request.headers.get('X-Tender-Id', '')

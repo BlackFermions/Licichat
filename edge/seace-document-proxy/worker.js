@@ -97,7 +97,7 @@ function normalizeSeaceUrl(rawUrl) {
 
 function corsHeaders(origin) {
   return {
-    "Access-Control-Allow-Headers": "Content-Type, X-Preparation-Ticket",
+    "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Max-Age": "86400",
@@ -187,23 +187,11 @@ async function prepareDocuments(request, env) {
     "Content-Type": "application/json",
     "X-Edge-Ingest-Key": env.EDGE_INGEST_KEY,
   };
-  let cachedResponse;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      cachedResponse = await fetch(statusUrl, {
-        method: "POST", headers: privateHeaders,
-        body: JSON.stringify({ tender_id: ticket.tender_id }),
-        signal: AbortSignal.timeout(25000),
-      });
-      if (![502, 503, 504].includes(cachedResponse.status)) break;
-      await cachedResponse.body?.cancel();
-    } catch {
-      cachedResponse = null;
-    }
-  }
-  if (!cachedResponse?.ok) {
-    return jsonResponse({ status: "error", code: "ai_temporarily_unavailable" }, 503, origin);
-  }
+  const cachedResponse = await fetch(statusUrl, {
+    method: "POST",
+    headers: privateHeaders,
+    body: JSON.stringify({ tender_id: ticket.tender_id }),
+  });
   if (cachedResponse.ok) {
     const cached = await cachedResponse.json();
     if (cached.ready) {
@@ -277,32 +265,6 @@ async function prepareDocuments(request, env) {
   return jsonResponse({ status: "ready", source: "edge", prepared, skipped }, 200, origin);
 }
 
-async function uploadPrivateDocument(request, env) {
-  const origin = request.headers.get('Origin') || '';
-  if (!ALLOWED_ORIGINS.has(origin)) return new Response('Forbidden', {status: 403});
-  const ticket = await verifyTicket(request.headers.get('X-Preparation-Ticket'), env.EDGE_TICKET_KEY);
-  if (!ticket || !Number.isSafeInteger(ticket.user_id) || ticket.user_id <= 0) {
-    return jsonResponse({status: 'error', code: 'invalid_ticket'}, 401, origin);
-  }
-  if (!request.body || request.headers.get('Content-Type')?.split(';')[0] !== 'application/pdf') {
-    return jsonResponse({status: 'error', code: 'invalid_pdf'}, 400, origin);
-  }
-  if (Number(request.headers.get('Content-Length') || 0) > MAX_FILE_BYTES) {
-    return jsonResponse({status: 'error', code: 'file_too_large'}, 413, origin);
-  }
-  try {
-    const upstream = await fetch(serviceUrl(env.AI_SERVICE_URL, '/api/v1/private-document'), {
-      method: 'POST', body: request.body, signal: AbortSignal.timeout(90000),
-      headers: {'Content-Type': 'application/pdf', 'X-Edge-Ingest-Key': env.EDGE_INGEST_KEY,
-                'X-Tender-Id': String(ticket.tender_id), 'X-User-Id': String(ticket.user_id)},
-    });
-    const data = await upstream.json().catch(() => ({status: 'error', code: 'upload_unavailable'}));
-    return jsonResponse(data, upstream.status, origin);
-  } catch {
-    return jsonResponse({status: 'error', code: 'upload_unavailable'}, 503, origin);
-  }
-}
-
 async function legacyProxy(request, env) {
   const authorized = await secureEqual(request.headers.get("X-Proxy-Key"), env.PROXY_KEY);
   if (!env.PROXY_KEY || !authorized) return new Response("Unauthorized", { status: 401 });
@@ -343,13 +305,12 @@ export default {
     if (request.method === "GET") {
       return Response.json({ status: "ok", service: "licigob-seace-edge-proxy" });
     }
-    if (request.method === "OPTIONS" && ["/prepare", "/upload"].includes(url.pathname)) {
+    if (request.method === "OPTIONS" && url.pathname === "/prepare") {
       const origin = request.headers.get("Origin") || "";
       if (!ALLOWED_ORIGINS.has(origin)) return new Response(null, { status: 403 });
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
-    if (url.pathname === '/upload') return uploadPrivateDocument(request, env);
     if (url.pathname === "/prepare") return prepareDocuments(request, env);
     if (url.pathname === "/") return legacyProxy(request, env);
     return new Response("Not found", { status: 404 });

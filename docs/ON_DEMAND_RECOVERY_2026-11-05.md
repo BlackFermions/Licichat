@@ -13,9 +13,10 @@ recomendaciones no cambian.
    existente, TTL 14 dias. No se generan embeddings para este recorrido.
 4. Si SEACE falla: usuario descarga por su cuenta y elige **Aportar PDF**.
    Backend autentica, revisa cuota sin consumir mensaje y comprueba licitacion.
-   Firma ticket de cinco minutos con user_id/tender_id. Worker `/upload` valida
-   origen y firma; transmite PDF crudo a `/api/v1/private-document` con identidad
-   tomada del ticket, no del cuerpo. No atraviesa el limite JSON de 2 MiB del backend.
+   Ruta `/api/chatbot/lite/private-document/upload?tender_id=...` transmite PDF
+   crudo a `/api/v1/private-document` con user_id de JWT y clave de servicio.
+   Limite Flask POR PETICION de 50 MiB solo en esta ruta; global JSON sigue 2 MiB.
+   No depende del Worker, de SEACE ni de autorizacion nueva en Cloudflare.
 
 No reintentar el fallo Worker descargando desde Azure, cuya salida ya fue rechazada
 en las pruebas del 03/11. No confundir indisponibilidad de cache con documento ausente.
@@ -46,9 +47,12 @@ Esto reduce, no elimina, el riesgo de prompt injection. Referencia usada:
 
 Pruebas de aislamiento, caducidad, limites, borrado, PDF escaneado/invalido, no escrituras
 compartidas, contenido no privilegiado, cuotas y propietarios en proxy, CORS/firma/stream
-del Worker, reintento de estado sin descargar y navegador simulado de upload/chat/delete.
+reintento de estado sin descargar, subida de mas de 2 MiB manteniendo limite global
+y navegador simulado de upload/chat/delete.
 
-Orden: Lite -> Worker -> backend -> frontend. No publicar frontend antes de rutas.
-Rollback: revision/imagen anterior de Lite, version anterior Worker e imagen previa backend.
+Orden: Lite -> backend -> frontend. No publicar frontend antes de rutas.
+Rollback: revision/imagen anterior de Lite e imagen previa backend. Worker no se modifica:
+la sesion Wrangler estaba vencida; los cambios provisionales de Worker se retiraron
+antes de publicar. No es necesario reautorizar Cloudflare para la carga privada.
 La cache on-demand 1241981 se preparo en prueba acotada real sin modelos ni cuotas de usuario.
 No se inicia el Job de ingesta ni se cambia retencion o recursos del piloto.

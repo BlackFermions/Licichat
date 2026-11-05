@@ -62,8 +62,8 @@ class PrivateDocumentTests(unittest.TestCase):
     def test_upload_route_auth_and_no_shared_writes(self):
         client = chat.app.test_client()
         self.assertEqual(client.post('/api/v1/private-document',data=b'%PDF-test').status_code,401)
-        with patch.object(chat, 'EDGE_INGEST_KEY','edge-test'), patch('lite_rag_engine._save_cache') as cache:
-            headers={'X-Edge-Ingest-Key':'edge-test','X-User-Id':'44','X-Tender-Id':'123'}
+        with patch.object(chat, 'SERVICE_KEY','service-test'), patch('lite_rag_engine._save_cache') as cache:
+            headers={'X-Service-Key':'service-test','X-User-Id':'44','X-Tender-Id':'123'}
             with open(self.path,'rb') as source:
                 response=client.post('/api/v1/private-document',headers=headers,data=source.read(),content_type='application/pdf')
             self.assertEqual(response.status_code,200)
