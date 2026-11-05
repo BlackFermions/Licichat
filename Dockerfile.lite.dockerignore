@@ -6,4 +6,5 @@
 !lite_chat_engine.py
 !pilot_chat_retrieval.py
 !evidence_selection.py
+!private_documents.py
 !match_engine_pgvector.py
