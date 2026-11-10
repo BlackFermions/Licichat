@@ -1,4 +1,14 @@
-# Recuperacion economica del chatbot (05/11/2026)
+# Estado actual: subida manual retirada (10/11/2026)
+
+La interfaz no acepta archivos. POST `/api/v1/private-document` devuelve 410
+FILE_UPLOAD_DISABLED con clave de servicio (401 sin clave), sin leer ni procesar
+el archivo. Health anuncia private_pdf_upload=false. Se conserva la ruta DELETE
+para limpieza; fichas, documentos preparados y cache oficial no se modifican.
+No se habilita descargador Windows ni ningun servicio nuevo.
+
+La descripcion siguiente es historica; el recorrido Aportar PDF esta deshabilitado.
+
+## Recuperacion economica del chatbot (05/11/2026, historico)
 
 No se activa ingesta diaria/masiva, OCR, vectorizacion nueva, otro servicio ni mas
 replicas. Se conserva min=0/max=1 y el modelo existente. El piloto preparado y las

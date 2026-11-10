@@ -414,7 +414,7 @@ def health():
             "status": "ok",
             "service": "licigob-ai-lite",
             "version": "1.3.0",
-            "private_pdf_upload": True,
+            "private_pdf_upload": False,
             "document_stream_protocol": "ndjson-v1",
             "model": CHAT_MODEL,
             "mode": "pdf-text-on-demand",
@@ -560,42 +560,9 @@ def edge_ingest():
 def upload_private_document():
     if not _authorized():
         return jsonify({'status': 'error', 'code': 'unauthorized'}), 401
-    user_id = request.headers.get('X-User-Id', '')
-    tender_id = request.headers.get('X-Tender-Id', '')
-    if not user_id.isdigit() or int(user_id) <= 0 or not tender_id or len(tender_id) > 80:
-        return jsonify({'status': 'error', 'code': 'invalid_request'}), 400
-    if not private_documents.UPLOAD_SLOT.acquire(blocking=False):
-        return jsonify({'status': 'error', 'code': 'upload_busy', 'message': 'Hay otro PDF en proceso. Reintenta en unos segundos.'}), 503
-    path = ''
-    try:
-        private_documents.reserve_upload(user_id)
-        written = 0
-        with tempfile.NamedTemporaryFile(prefix='licigob_private_', suffix='.pdf', delete=False) as handle:
-            path = handle.name
-            while True:
-                chunk = request.stream.read(64 * 1024)
-                if not chunk:
-                    break
-                written += len(chunk)
-                if written > MAX_FILE_BYTES:
-                    return jsonify({'status': 'error', 'code': 'file_too_large'}), 413
-                handle.write(chunk)
-        with open(path, 'rb') as handle:
-            if handle.read(5) != b'%PDF-':
-                return jsonify({'status': 'error', 'code': 'unexpected_content', 'message': 'El archivo no es un PDF valido.'}), 422
-        return jsonify(private_documents.create_document(user_id, tender_id, path))
-    except LiteRagError as exc:
-        return jsonify({'status': 'error', 'code': exc.code, 'message': str(exc)}), 429 if exc.code == 'upload_rate_limited' else 422
-    except Exception:
-        logger.warning('private_document_rejected')
-        return jsonify({'status': 'error', 'code': 'invalid_pdf', 'message': 'No se pudo leer el PDF. Comprueba que no este danado o protegido.'}), 422
-    finally:
-        if path:
-            try:
-                os.unlink(path)
-            except FileNotFoundError:
-                pass
-        private_documents.UPLOAD_SLOT.release()
+    # Retire the capability at its source too; never read or extract the body.
+    return jsonify({'status': 'error', 'code': 'FILE_UPLOAD_DISABLED',
+                    'message': 'La subida de archivos al chatbot esta deshabilitada.'}), 410
 
 
 @app.delete('/api/v1/private-document')

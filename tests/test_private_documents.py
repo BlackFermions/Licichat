@@ -59,17 +59,25 @@ class PrivateDocumentTests(unittest.TestCase):
         with self.assertRaises(LiteRagError) as error: private.create_document('11', '123', path)
         self.assertEqual(error.exception.code, 'scanned_pdf')
 
-    def test_upload_route_auth_and_no_shared_writes(self):
+    def test_upload_route_retired_even_with_service_key(self):
         client = chat.app.test_client()
         self.assertEqual(client.post('/api/v1/private-document',data=b'%PDF-test').status_code,401)
-        with patch.object(chat, 'SERVICE_KEY','service-test'), patch('lite_rag_engine._save_cache') as cache:
+        with patch.object(chat, 'SERVICE_KEY','service-test'), \
+             patch.object(private,'create_document') as create, \
+             patch.object(private,'reserve_upload') as reserve, \
+             patch.object(chat.tempfile,'NamedTemporaryFile') as temporary, \
+             patch('lite_rag_engine._save_cache') as cache:
             headers={'X-Service-Key':'service-test','X-User-Id':'44','X-Tender-Id':'123'}
             with open(self.path,'rb') as source:
                 response=client.post('/api/v1/private-document',headers=headers,data=source.read(),content_type='application/pdf')
-            self.assertEqual(response.status_code,200)
-            self.assertEqual(response.json['source'],'private_upload')
+            self.assertEqual(response.status_code,410)
+            self.assertEqual(response.json['code'],'FILE_UPLOAD_DISABLED')
+            create.assert_not_called(); reserve.assert_not_called(); temporary.assert_not_called()
             cache.assert_not_called()
-            self.assertEqual(client.post('/api/v1/private-document',headers={**headers,'X-User-Id':'45'},data=b'not-pdf').status_code,422)
+            self.assertEqual(client.post('/api/v1/private-document',headers={**headers,'X-User-Id':'45'},data=b'not-pdf').status_code,410)
+
+    def test_health_no_longer_advertises_uploads(self):
+        self.assertIs(chat.app.test_client().get('/health').json['private_pdf_upload'],False)
 
     def test_private_chat_no_download_no_embedding_and_unprivileged_pdf(self):
         client=chat.app.test_client()
